@@ -29,7 +29,7 @@ Validation is intentionally minimal and mirrors actual code behavior.
 Required for a push attempt:
 1. `Profile JSON` parses as valid JSON object.
 2. `temperature` is a number in range `60..100`.
-3. `phases` is an array with at least one element.
+3. `phases` is an array with at least one element and at most 20 elements.
 
 If any validation check fails:
 - Set `Push Status = Failed`
@@ -38,13 +38,15 @@ If any validation check fails:
 ## Profile Normalization Before Save
 Before calling GaggiMate `saveProfile`, the bridge normalizes each phase so device payloads are schema-compatible even when Notion JSON is sparse.
 
-Per-phase defaults:
+Per-phase defaults applied before device save:
 - `valve`: defaults to `1` when missing/invalid.
 - `pump.target`: defaults to `"pressure"` when missing/invalid.
 - `pump.pressure`: defaults to `9` when missing/invalid.
 - `pump.flow`: defaults to `0` when missing/invalid.
 - `phase`: defaults to `"brew"` when missing/invalid.
 - `temperature`: defaults to profile `temperature` when missing/invalid.
+
+Additionally, `targets: []` (empty targets array) is stripped from each phase before the device save and before equivalence comparison. The GaggiMate device omits empty arrays rather than storing them, so storing `targets: []` in Notion JSON is treated the same as omitting the field entirely.
 
 This normalization runs for both:
 - Webhook push path (`pushProfileToGaggiMate`)

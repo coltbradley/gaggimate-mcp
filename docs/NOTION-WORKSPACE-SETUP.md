@@ -152,8 +152,9 @@ Primary rules:
 
 When creating or editing Profile JSON:
 - temperature must be a number between 60 and 100
-- phases must be a non-empty array
+- phases must be a non-empty array with at most 20 entries
 - each phase needs: name, phase ("preinfusion" or "brew"), duration
+- omit targets entirely or provide real stop conditions — empty targets arrays (targets: []) are equivalent to omitting the field
 
 Operational behavior:
 - Use Draft while editing.

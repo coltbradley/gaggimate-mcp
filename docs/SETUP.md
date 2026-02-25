@@ -242,6 +242,8 @@ PROFILE_RECONCILE_DELETE_ENABLED=true
 PROFILE_RECONCILE_DELETE_LIMIT_PER_RUN=3
 PROFILE_RECONCILE_SAVE_LIMIT_PER_RUN=5
 RECENT_SHOT_LOOKBACK_COUNT=5
+# How often to scan for brews with stale JSON or missing chart images (ms, default 1 hour)
+BREW_REPAIR_INTERVAL_MS=3600000
 HTTP_PORT=3000
 BREW_TITLE_TIMEZONE=America/Los_Angeles
 ```
@@ -386,6 +388,8 @@ This gives you a public URL like `https://your-machine.tail12345.ts.net`.
 | Brew title AM/PM appears wrong | Container timezone differs from your local timezone | Set `BREW_TITLE_TIMEZONE` (e.g. `America/Los_Angeles`) and restart |
 | Frequent timeout warnings | GaggiMate slow/unreachable or timeout too low | Verify connectivity and increase `REQUEST_TIMEOUT` (e.g. `10000`) |
 | Docker can't resolve hostname | mDNS doesn't work in Docker | Use IP address, not `gaggimate.local` |
+| Old brews missing chart image or Shot JSON | Image was uploaded too early (blank) or shot was captured while initializing | The hourly repair scan will detect and re-sync these automatically; force sooner by restarting the service (repair runs on startup) |
+| Profile reconciler logs "3 saved/re-pushed" every cycle | Persistent field mismatch between Notion JSON and device profile | Check logs for `Profile reconciler: mismatch at ...` to identify the differing field; `targets: []` (empty array) is now automatically stripped and should not recur |
 
 ---
 

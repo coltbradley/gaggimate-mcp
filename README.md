@@ -12,6 +12,7 @@ Forked from [Matvey-Kuk/gaggimate-mcp](https://github.com/Matvey-Kuk/gaggimate-m
 - **Normalizes profile payloads** — Before device saves, phase defaults are applied (`valve`, `pump.target`, `pump.pressure`, `pump.flow`) for schema compatibility
 - **Syncs profile state** — `Favorite` and `Selected` checkboxes in Notion sync to GaggiMate for managed profiles
 - **Generates profile charts** — Auto-attaches a pressure/flow chart image to `Profile Image` for imported machine profiles when missing
+- **Repairs stale brew data** — Hourly background scan detects brews with empty Shot JSON or missing chart images and re-syncs them
 - **Backfills brew/profile links** — Automatically links existing brews to profiles when `Activity ID` + shot metadata identifies the profile
 - **Survives firmware updates** — Shot history on the ESP32 gets wiped by OTA updates; Notion is the permanent record
 
@@ -50,17 +51,25 @@ Copy `.env.example` to `.env` and fill in your values. Never commit `.env` — i
 
 | Variable | Description | Default |
 |---|---|---|
-| `GAGGIMATE_HOST` | GaggiMate IP address | `localhost` |
+| `GAGGIMATE_HOST` | GaggiMate IP address | `localhost` (required) |
+| `GAGGIMATE_PROTOCOL` | `ws` or `wss` | `ws` |
+| `REQUEST_TIMEOUT` | GaggiMate request timeout (ms) | `5000` |
 | `NOTION_API_KEY` | Notion integration token (starts with `ntn_`) | required |
-| `NOTION_BEANS_DB_ID` | Notion Beans database ID | required |
 | `NOTION_BREWS_DB_ID` | Notion Brews database ID | required |
 | `NOTION_PROFILES_DB_ID` | Notion Profiles database ID | required |
+| `NOTION_BEANS_DB_ID` | Notion Beans database ID | optional |
+| `WEBHOOK_SECRET` | Notion webhook verification token — if set, signatures are validated | optional |
 | `SYNC_INTERVAL_MS` | Shot polling interval (ms) | `30000` |
-| `PROFILE_RECONCILE_ENABLED` | Enable profile reconciliation loop | `true` |
-| `PROFILE_RECONCILE_INTERVAL_MS` | Profile reconcile interval (ms) | `30000` |
-| `RECENT_SHOT_LOOKBACK_COUNT` | Number of recent shots to re-hydrate/update each poll | `5` |
-| `BREW_TITLE_TIMEZONE` | Timezone used for brew title AM/PM labels | `America/Los_Angeles` |
-| `WEBHOOK_SECRET` | Notion webhook signature verification (if unset, unsigned webhook events are accepted) | optional |
+| `RECENT_SHOT_LOOKBACK_COUNT` | Recent shots to re-check each poll | `5` |
+| `BREW_REPAIR_INTERVAL_MS` | How often to scan for stale/missing brew data (ms) | `3600000` (1h) |
+| `PROFILE_RECONCILE_ENABLED` | Enable profile reconciler | `true` |
+| `PROFILE_RECONCILE_INTERVAL_MS` | Reconciler interval (ms) | `30000` |
+| `PROFILE_RECONCILE_DELETE_ENABLED` | Allow deleting Archived profiles from device | `true` |
+| `PROFILE_RECONCILE_DELETE_LIMIT_PER_RUN` | Max device deletes per reconcile cycle | `3` |
+| `PROFILE_RECONCILE_SAVE_LIMIT_PER_RUN` | Max device saves per reconcile cycle | `5` |
+| `BREW_TITLE_TIMEZONE` | Timezone for brew title date/AM/PM labels | `America/Los_Angeles` |
+| `HTTP_PORT` | HTTP server port | `3000` |
+| `DATA_DIR` | Persistent data directory (sync state) | `./data` |
 
 ## Security
 

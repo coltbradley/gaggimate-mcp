@@ -1,6 +1,8 @@
 # Profile Reconciliation Implementation Plan
 
 > **Completed.** All steps in this plan have been implemented. This document is a historical record. The live behavior is described in `mcp-json-validation.md` and `NOTION-WORKSPACE-SETUP.md`.
+>
+> **Post-implementation fix (Feb 2026):** A persistent re-push loop was discovered where all profiles were re-pushed every 30s reconcile cycle. Root cause: Notion JSON stored `targets: []` (empty array) in phases, but the GaggiMate device omits empty arrays entirely, so `areProfilesEquivalent` always returned false. Fixed in `normalizeProfileForGaggiMate`: empty `targets` arrays are now stripped before any comparison or device write. The equivalence check also logs the first mismatching field path when a drift is detected, to aid future diagnosis.
 
 ## Verification Summary
 
