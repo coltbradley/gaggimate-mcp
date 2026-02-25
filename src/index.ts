@@ -84,7 +84,9 @@ async function main() {
   // Start shot poller
   shotPoller.start();
 
-  // Start profile reconciler
+  // Start profile reconciler — delayed by 10 s so it doesn't open a WebSocket
+  // at the exact same moment the shot poller makes its first HTTP request.
+  // The ESP32 can struggle when both connections land simultaneously at startup.
   let profileReconciler: ProfileReconciler | null = null;
   if (config.sync.profileReconcileEnabled) {
     profileReconciler = new ProfileReconciler(gaggimate, notion, {
@@ -93,7 +95,7 @@ async function main() {
       maxDeletesPerRun: config.sync.profileReconcileDeleteLimitPerRun,
       maxSavesPerRun: config.sync.profileReconcileSaveLimitPerRun,
     });
-    profileReconciler.start();
+    setTimeout(() => profileReconciler!.start(), 10_000);
   }
 
   // Handle shutdown
