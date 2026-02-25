@@ -15,7 +15,7 @@ function normalizePhase(phase: ProfilePhase, fallbackTemperature: number): Profi
   const rawPump: Partial<NonNullable<ProfilePhase["pump"]>> =
     phase?.pump && typeof phase.pump === "object" ? phase.pump : {};
 
-  return {
+  const result: ProfilePhase = {
     ...phase,
     phase: phase?.phase === "preinfusion" ? "preinfusion" : "brew",
     valve: phase?.valve === 0 || phase?.valve === 1 ? phase.valve : 1,
@@ -27,6 +27,14 @@ function normalizePhase(phase: ProfilePhase, fallbackTemperature: number): Profi
       flow: toFiniteNumber(rawPump.flow) ?? DEFAULT_PUMP_FLOW,
     },
   };
+
+  // The device omits empty targets arrays rather than returning [].
+  // Strip them here so [] and absent are treated as equivalent during comparison.
+  if (Array.isArray(result.targets) && result.targets.length === 0) {
+    delete (result as any).targets;
+  }
+
+  return result;
 }
 
 export function normalizeProfileForGaggiMate(profile: ProfileData): ProfileData {
