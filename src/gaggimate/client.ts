@@ -32,8 +32,24 @@ interface WsRequestOptions {
   errorPrefix: string;
 }
 
+interface PendingRequest {
+  resType: string;
+  extractResult: (res: any) => any;
+  errorPrefix: string;
+  resolve: (value: any) => void;
+  reject: (err: Error) => void;
+  timeoutHandle: NodeJS.Timeout;
+}
+
 export class GaggiMateClient {
   private config: GaggiMateConfig;
+
+  // Shared WebSocket connection — reused across sequential requests to avoid
+  // per-request TCP + WS handshake overhead. Closed after WS_IDLE_TTL ms of inactivity.
+  private sharedWs: WebSocket | null = null;
+  private sharedWsIdleTimer: NodeJS.Timeout | null = null;
+  private pendingRequests = new Map<string, PendingRequest>();
+  private readonly WS_IDLE_TTL = 8000;
 
   constructor(config: GaggiMateConfig) {
     this.config = config;
@@ -51,66 +67,112 @@ export class GaggiMateClient {
     return this.config.protocol === "wss" ? "https" : "http";
   }
 
-  /**
-   * Send a single request/response over a fresh WebSocket connection.
-   * Handles connection lifecycle, timeouts, and error reporting.
-   */
-  private sendWsRequest<T>(options: WsRequestOptions): Promise<T> {
+  private scheduleWsClose(): void {
+    if (this.sharedWsIdleTimer) clearTimeout(this.sharedWsIdleTimer);
+    this.sharedWsIdleTimer = setTimeout(() => {
+      this.sharedWsIdleTimer = null;
+      const ws = this.sharedWs;
+      this.sharedWs = null;
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        ws.close();
+      }
+    }, this.WS_IDLE_TTL);
+  }
+
+  private handleSharedMessage(data: WebSocket.Data): void {
+    let response: any;
+    try {
+      response = JSON.parse(data.toString());
+    } catch {
+      return;
+    }
+    const pending = this.pendingRequests.get(response.rid);
+    if (!pending || response.tp !== pending.resType) return;
+
+    this.pendingRequests.delete(response.rid);
+    clearTimeout(pending.timeoutHandle);
+    this.scheduleWsClose();
+
+    if (response.error) {
+      pending.reject(new Error(`${pending.errorPrefix}: ${response.error}`));
+    } else {
+      pending.resolve(pending.extractResult(response));
+    }
+  }
+
+  private rejectAllPending(reason: string): void {
+    for (const pending of this.pendingRequests.values()) {
+      clearTimeout(pending.timeoutHandle);
+      pending.reject(new Error(reason));
+    }
+    this.pendingRequests.clear();
+  }
+
+  private getOrCreateWs(): Promise<WebSocket> {
+    if (this.sharedWs?.readyState === WebSocket.OPEN) {
+      return Promise.resolve(this.sharedWs);
+    }
+
+    // Close any stale connecting/closing socket before opening a new one.
+    if (this.sharedWs) {
+      const stale = this.sharedWs;
+      this.sharedWs = null;
+      stale.removeAllListeners();
+      if (stale.readyState === WebSocket.CONNECTING || stale.readyState === WebSocket.OPEN) {
+        stale.close();
+      }
+    }
+
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(this.wsUrl);
-      const requestId = generateRequestId();
-      let timeoutHandle: NodeJS.Timeout | null = null;
-      let settled = false;
+      this.sharedWs = ws;
 
-      const cleanup = () => {
-        if (timeoutHandle) {
-          clearTimeout(timeoutHandle);
-          timeoutHandle = null;
-        }
-        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-          ws.close();
-        }
-      };
+      ws.on("open", () => resolve(ws));
 
-      const settle = (fn: () => void) => {
-        if (!settled) {
-          settled = true;
-          cleanup();
-          fn();
-        }
-      };
+      ws.on("message", (data: WebSocket.Data) => this.handleSharedMessage(data));
 
-      timeoutHandle = setTimeout(() => {
-        settle(() => reject(new Error(`Request timeout: No response from GaggiMate at ${this.wsUrl}`)));
-      }, this.config.requestTimeout);
-
-      ws.on("open", () => {
-        ws.send(JSON.stringify({ tp: options.reqType, rid: requestId, ...options.payload }));
-      });
-
-      ws.on("message", (data: WebSocket.Data) => {
-        try {
-          const response = JSON.parse(data.toString());
-          if (response.tp === options.resType && response.rid === requestId) {
-            settle(() => {
-              if (response.error) {
-                reject(new Error(`${options.errorPrefix}: ${response.error}`));
-              } else {
-                resolve(options.extractResult(response));
-              }
-            });
-          }
-        } catch (error) {
-          settle(() => reject(new Error(`Failed to parse response: ${error}`)));
-        }
-      });
-
-      ws.on("error", (error) => {
-        settle(() => reject(new Error(`WebSocket error: ${error.message}`)));
+      ws.on("error", (err) => {
+        if (this.sharedWs === ws) this.sharedWs = null;
+        this.rejectAllPending(`WebSocket error: ${err.message}`);
+        reject(new Error(`WebSocket error: ${err.message}`));
       });
 
       ws.on("close", () => {
-        settle(() => reject(new Error("WebSocket closed unexpectedly")));
+        if (this.sharedWs === ws) this.sharedWs = null;
+        this.rejectAllPending("WebSocket closed unexpectedly");
+      });
+    });
+  }
+
+  /**
+   * Send a request over the shared WebSocket connection.
+   * The connection is kept alive for WS_IDLE_TTL ms after the last response
+   * to amortise TCP + handshake cost across sequential calls.
+   */
+  private sendWsRequest<T>(options: WsRequestOptions): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const requestId = generateRequestId();
+
+      const timeoutHandle = setTimeout(() => {
+        this.pendingRequests.delete(requestId);
+        reject(new Error(`Request timeout: No response from GaggiMate at ${this.wsUrl}`));
+      }, this.config.requestTimeout);
+
+      this.pendingRequests.set(requestId, {
+        resType: options.resType,
+        extractResult: options.extractResult,
+        errorPrefix: options.errorPrefix,
+        resolve,
+        reject,
+        timeoutHandle,
+      });
+
+      this.getOrCreateWs().then((ws) => {
+        ws.send(JSON.stringify({ tp: options.reqType, rid: requestId, ...options.payload }));
+      }).catch((err) => {
+        this.pendingRequests.delete(requestId);
+        clearTimeout(timeoutHandle);
+        reject(err);
       });
     });
   }

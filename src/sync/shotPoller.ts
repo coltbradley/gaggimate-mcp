@@ -175,12 +175,14 @@ export class ShotPoller {
                 const profileStillMissing = !(await this.notion.hasProfileByName(brewData.profileName));
                 if (profileStillMissing) {
                   const importedPageId = await this.notion.createDraftProfile(matchingProfile);
-                  await this.notion.uploadProfileImage(
+                  // Non-blocking: image upload (SVG render + 3 API calls) should not delay brew sync.
+                  // The profile reconciler will also restore missing images on its next cycle.
+                  this.notion.uploadProfileImage(
                     importedPageId,
                     matchingProfile.label,
                     matchingProfile,
                     JSON.stringify(matchingProfile),
-                  );
+                  ).catch((err) => console.warn(`Shot ${shotListItem.id}: profile image upload failed`, err));
                   console.log(`Shot ${shotListItem.id}: imported profile "${brewData.profileName}" as Draft`);
                 }
               }

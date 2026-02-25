@@ -44,9 +44,6 @@ export async function pushProfileToGaggiMate(
     if (savedId) {
       profile.id = savedId;
     }
-    // Always write back normalized form so Notion JSON stays consistent with the device.
-    const normalizedProfile = normalizeProfileForGaggiMate(profile as any);
-    await notion.updateProfileJson(pageId, JSON.stringify(normalizedProfile));
     const effectiveProfileId = savedId || notion.extractProfileId(profile);
     if (effectiveProfileId) {
       try {
@@ -57,9 +54,10 @@ export async function pushProfileToGaggiMate(
       }
     }
 
-    // Success — update Notion
+    // Write normalized JSON + status together — one Notion API call instead of two.
+    const normalizedProfile = normalizeProfileForGaggiMate(profile as any);
     const now = new Date().toISOString();
-    await notion.updatePushStatus(pageId, "Pushed", now, true);
+    await notion.updatePushStatus(pageId, "Pushed", now, true, JSON.stringify(normalizedProfile));
     console.log(`Profile ${pageId}: pushed to GaggiMate`);
   } catch (error) {
     console.error(`Profile ${pageId}: push failed:`, error);

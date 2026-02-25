@@ -224,6 +224,7 @@ export class NotionClient {
     status: PushStatus,
     timestamp?: string,
     activeOnMachine?: boolean,
+    profileJson?: string,
   ): Promise<void> {
     const properties: Record<string, any> = {
       "Push Status": { select: { name: status } },
@@ -233,6 +234,9 @@ export class NotionClient {
     }
     if (activeOnMachine !== undefined) {
       properties["Active on Machine"] = { checkbox: activeOnMachine };
+    }
+    if (profileJson !== undefined) {
+      properties["Profile JSON"] = { rich_text: this.toRichText(profileJson) };
     }
     await this.client.pages.update({
       page_id: pageId,
@@ -324,6 +328,14 @@ export class NotionClient {
       },
     });
 
+    // Seed the profile name cache so the next findProfilePageByName call for this name is free.
+    const normalizedCreatedName = this.normalizeProfileName(profileName);
+    if (normalizedCreatedName) {
+      this.profilePageIdCache.set(normalizedCreatedName, {
+        pageId: createdPage.id,
+        expiresAt: Date.now() + this.PROFILE_CACHE_TTL,
+      });
+    }
     return createdPage.id;
   }
 

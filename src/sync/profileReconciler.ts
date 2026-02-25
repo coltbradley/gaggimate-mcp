@@ -254,10 +254,6 @@ export class ProfileReconciler {
       if (savedId) {
         parsedProfile.id = savedId;
       }
-      // Always write back normalized form so Notion JSON stays consistent with the device.
-      const normalizedSaved = normalizeProfileForGaggiMate(parsedProfile as any);
-      await this.notion.updateProfileJson(notionProfile.pageId, JSON.stringify(normalizedSaved));
-
       if (savedId) {
         matchedDeviceIds.add(savedId);
       }
@@ -269,8 +265,10 @@ export class ProfileReconciler {
       // Sync favorite/selected immediately after push without waiting for the next cycle.
       await this.applyFavoriteAndSelectedSync(notionProfile, savedResult, { forceSelect: notionProfile.selected });
 
+      // Write normalized JSON + status together — one Notion API call instead of two.
+      const normalizedSaved = normalizeProfileForGaggiMate(parsedProfile as any);
       const now = new Date().toISOString();
-      await this.notion.updatePushStatus(notionProfile.pageId, "Pushed", now, true);
+      await this.notion.updatePushStatus(notionProfile.pageId, "Pushed", now, true, JSON.stringify(normalizedSaved));
       console.log(`Profile ${notionProfile.pageId}: pushed to device`);
 
       // Restore profile chart image if it was deleted (best-effort, non-blocking on failure).
@@ -315,8 +313,10 @@ export class ProfileReconciler {
         await this.gaggimate.saveProfile(notionProfileJson);
         this.savedThisRun += 1;
         await this.applyFavoriteAndSelectedSync(notionProfile, notionProfileJson, { forceSelect: notionProfile.selected });
+        // Write normalized JSON + status together — one Notion API call instead of two.
+        const normalizedRepush = normalizeProfileForGaggiMate(notionProfileJson as any);
         const now = new Date().toISOString();
-        await this.notion.updatePushStatus(notionProfile.pageId, "Pushed", now, true);
+        await this.notion.updatePushStatus(notionProfile.pageId, "Pushed", now, true, JSON.stringify(normalizedRepush));
         console.log(`Profile ${notionProfile.pageId}: re-pushed missing device profile`);
 
         // Restore profile chart image if it was deleted (best-effort, non-blocking on failure).
@@ -352,9 +352,9 @@ export class ProfileReconciler {
 
         await this.gaggimate.saveProfile(notionProfileJson);
         this.savedThisRun += 1;
-        // Update Notion JSON to the normalized form so future comparisons don't drift again.
+        // Write normalized JSON + ensure activeOnMachine=true together — one Notion API call.
         const normalizedJson = normalizeProfileForGaggiMate(notionProfileJson as any);
-        await this.notion.updateProfileJson(notionProfile.pageId, JSON.stringify(normalizedJson));
+        await this.notion.updatePushStatus(notionProfile.pageId, "Pushed", undefined, true, JSON.stringify(normalizedJson));
         console.log(`Profile ${notionProfile.pageId}: reconciled device profile from Notion JSON`);
       } catch (error) {
         console.error(`Profile ${notionProfile.pageId}: failed to reconcile profile drift:`, error);
@@ -365,7 +365,7 @@ export class ProfileReconciler {
 
     await this.applyFavoriteAndSelectedSync(notionProfile, deviceProfile);
 
-    if (notionProfile.activeOnMachine !== true) {
+    if (!needsRepush && notionProfile.activeOnMachine !== true) {
       await this.notion.updatePushStatus(notionProfile.pageId, "Pushed", undefined, true);
     }
 
