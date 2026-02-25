@@ -565,7 +565,56 @@ export class ProfileReconciler {
     // preventing a false mismatch — and re-push — on every reconcile cycle.
     const desired = this.normalizeForCompare(normalizeProfileForGaggiMate(first as any));
     const actual = this.normalizeForCompare(normalizeProfileForGaggiMate(second as any));
-    return this.isSubsetMatch(desired, actual);
+    const match = this.isSubsetMatch(desired, actual);
+    if (!match) {
+      const mismatch = this.findMismatchPath(desired, actual);
+      console.warn(`Profile reconciler: mismatch at ${mismatch ?? "(unknown)"}`);
+    }
+    return match;
+  }
+
+  /**
+   * Returns a human-readable path + value summary of the first mismatch between
+   * two post-normalize objects.  Mirrors the logic in isSubsetMatch so the path
+   * is always accurate.
+   */
+  private findMismatchPath(desired: any, actual: any, path = ""): string | null {
+    if (Array.isArray(desired)) {
+      if (!Array.isArray(actual) || desired.length !== actual.length) {
+        return `${path} (array length: ${desired.length} vs ${Array.isArray(actual) ? actual.length : typeof actual})`;
+      }
+      for (let i = 0; i < desired.length; i++) {
+        const sub = this.findMismatchPath(desired[i], actual[i], `${path}[${i}]`);
+        if (sub !== null) return sub;
+      }
+      return null;
+    }
+
+    if (desired && typeof desired === "object") {
+      if (!actual || typeof actual !== "object") {
+        return `${path}: object vs ${typeof actual}`;
+      }
+      for (const [key, desiredValue] of Object.entries(desired)) {
+        const sub = this.findMismatchPath(desiredValue, (actual as any)[key], path ? `${path}.${key}` : key);
+        if (sub !== null) return sub;
+      }
+      return null;
+    }
+
+    // Primitive coercions (mirrors isSubsetMatch)
+    if (typeof desired === "number" && typeof actual === "string") {
+      const parsed = Number(actual);
+      if (Number.isFinite(parsed) && desired === parsed) return null;
+    }
+    if (typeof desired === "boolean" && typeof actual === "string") {
+      const normalized = actual.trim().toLowerCase();
+      if ((normalized === "true" || normalized === "false") && desired === (normalized === "true")) return null;
+    }
+
+    if (desired !== actual) {
+      return `${path}: ${JSON.stringify(desired)} vs ${JSON.stringify(actual)}`;
+    }
+    return null;
   }
 
   private normalizeForCompare(value: any): any {
