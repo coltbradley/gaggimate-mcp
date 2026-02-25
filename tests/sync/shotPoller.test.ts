@@ -66,6 +66,7 @@ describe("ShotPoller", () => {
         dataDir,
         recentShotLookbackCount: 5,
         brewTitleTimeZone: "America/Los_Angeles",
+        repairIntervalMs: -1, // disable periodic repair for this test
       });
 
       await (poller as any).poll();
@@ -110,6 +111,7 @@ describe("ShotPoller", () => {
         dataDir,
         recentShotLookbackCount: 5,
         brewTitleTimeZone: "America/Los_Angeles",
+        repairIntervalMs: -1, // disable periodic repair for this test
       });
 
       await (poller as any).poll();
@@ -126,7 +128,7 @@ describe("ShotPoller", () => {
     }
   });
 
-  it("repairs stale brews with empty JSON on first poll by re-syncing JSON and chart", async () => {
+  it("repairs stale brews with empty JSON and missing chart image by re-syncing both", async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "shot-poller-test-"));
 
     // Shot 2 was already synced (id <= lastSyncedShotId) but with empty JSON.
@@ -145,9 +147,8 @@ describe("ShotPoller", () => {
 
     const notion = {
       findBrewByShotId: vi.fn()
-        .mockResolvedValueOnce("existing-brew-2") // repair scan finds brew for shot 2
-        .mockResolvedValueOnce("existing-brew-2") // repair: getBrewShotJson page call
-        .mockResolvedValueOnce(null),             // main loop: shot 3 is new
+        .mockResolvedValueOnce("existing-brew-2") // repair scan: shot 2
+        .mockResolvedValueOnce(null),             // main loop: shot 3 is new (shot 2 skipped via fullySyncedShots)
       getBrewShotJson: vi.fn().mockResolvedValue(
         JSON.stringify({ metadata: { sample_count: 0 } }) // stale!
       ),
@@ -170,6 +171,7 @@ describe("ShotPoller", () => {
         dataDir,
         recentShotLookbackCount: 5,
         brewTitleTimeZone: "America/Los_Angeles",
+        repairIntervalMs: 1, // runs immediately since repairLastRun starts at 0
       });
 
       // Seed sync state so shot 2 is considered "already synced" (in lookback, not new)
@@ -185,7 +187,7 @@ describe("ShotPoller", () => {
         expect.stringContaining('"sample_count"'),
       );
       expect(notion.uploadBrewChart).toHaveBeenCalledWith("existing-brew-2", "2", expect.any(Object));
-      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("repaired stale brew"));
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("repaired brew"));
     } finally {
       logSpy.mockRestore();
       rmSync(dataDir, { recursive: true, force: true });
@@ -230,6 +232,7 @@ describe("ShotPoller", () => {
         dataDir,
         recentShotLookbackCount: 5,
         brewTitleTimeZone: "America/Los_Angeles",
+        repairIntervalMs: -1, // disable periodic repair for this test
       });
 
       // Poll 1: device unreachable — enters cooldown
@@ -287,6 +290,7 @@ describe("ShotPoller", () => {
         dataDir,
         recentShotLookbackCount: 5,
         brewTitleTimeZone: "America/Los_Angeles",
+        repairIntervalMs: -1, // disable periodic repair for this test
       });
 
       await (poller as any).poll();
