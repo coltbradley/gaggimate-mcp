@@ -22,6 +22,10 @@ export class ProfileReconciler {
   private savedThisRun = 0;
   private saveLimitWarned = false;
   private connectivityWarningActive = false;
+  // When set, reconcile() returns early until this timestamp passes so we don't
+  // hammer an offline device on every interval.
+  private connectivityCooldownUntil = 0;
+  private readonly CONNECTIVITY_COOLDOWN_MS = 3 * 60_000; // 3 minutes
   // Cooldown: skip backfill until this timestamp to avoid hammering Notion/GaggiMate
   // when there's nothing to link or brews are persistently unresolvable.
   private backfillSkipUntil = 0;
@@ -49,6 +53,7 @@ export class ProfileReconciler {
 
   private async reconcile(): Promise<void> {
     if (this.running) return;
+    if (Date.now() < this.connectivityCooldownUntil) return;
     this.running = true;
     this.deletedThisRun = 0;
     this.deleteLimitWarned = false;
@@ -70,6 +75,7 @@ export class ProfileReconciler {
             console.warn(`Profile reconciler: GaggiMate unreachable (${summary}), will retry next interval`);
             this.connectivityWarningActive = true;
           }
+          this.connectivityCooldownUntil = Date.now() + this.CONNECTIVITY_COOLDOWN_MS;
         } else {
           console.error("Profile reconciler: failed to fetch device profiles:", error);
         }
@@ -80,6 +86,7 @@ export class ProfileReconciler {
       if (this.connectivityWarningActive) {
         console.log("Profile reconciler: GaggiMate connectivity restored");
         this.connectivityWarningActive = false;
+        this.connectivityCooldownUntil = 0;
       }
 
       if (notionResult.status === "rejected") {

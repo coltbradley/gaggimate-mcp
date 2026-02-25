@@ -271,13 +271,7 @@ export class NotionClient {
     return profileJson;
   }
 
-  /** @deprecated Use getProfilePageData for combined fetch */
-  async getProfilePushData(pageId: string): Promise<{ profileJson: string | null; pushStatus: string | null }> {
-    const { profileJson, pushStatus } = await this.getProfilePageData(pageId);
-    return { profileJson, pushStatus };
-  }
-
-  /** @deprecated Use getProfilePageData for combined fetch */
+  /** Read favorite and selected state from a profile page */
   async getProfilePreferenceState(pageId: string): Promise<{ favorite: boolean; selected: boolean }> {
     const { favorite, selected } = await this.getProfilePageData(pageId);
     return { favorite, selected };

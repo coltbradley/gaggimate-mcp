@@ -37,6 +37,14 @@ export async function pushProfileToGaggiMate(
     return;
   }
 
+  // Reject obviously malformed profiles with an unreasonable number of phases.
+  // GaggiMate's binary recorder caps phase transitions at 12; 20 is a generous upper bound.
+  if (profile.phases.length > 20) {
+    console.error(`Profile ${pageId}: too many phases (${profile.phases.length}, max 20)`);
+    await notion.updatePushStatus(pageId, "Failed");
+    return;
+  }
+
   try {
     // saveProfile handles normalization internally.
     const savedResult = await gaggimate.saveProfile(profile);

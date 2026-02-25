@@ -192,6 +192,67 @@ describe("ShotPoller", () => {
     }
   });
 
+  it("skips polling while connectivity cooldown is active and resumes when device recovers", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "shot-poller-test-"));
+    const networkError: any = new TypeError("fetch failed");
+    networkError.cause = { code: "EHOSTUNREACH" };
+
+    let callCount = 0;
+    const gaggimate = {
+      fetchShotHistory: vi.fn().mockImplementation(() => {
+        callCount++;
+        // First call: fails (device offline)
+        if (callCount === 1) return Promise.reject(networkError);
+        // Subsequent calls: succeed
+        return Promise.resolve([]);
+      }),
+      fetchShot: vi.fn(),
+      fetchProfiles: vi.fn(),
+      uploadBrewChart: vi.fn(),
+    };
+
+    const notion = {
+      findBrewByShotId: vi.fn(),
+      hasProfileByName: vi.fn(),
+      normalizeProfileName: vi.fn(),
+      createDraftProfile: vi.fn(),
+      uploadProfileImage: vi.fn(),
+      createBrew: vi.fn(),
+      updateBrewFromData: vi.fn(),
+      brewHasProfileImage: vi.fn(),
+      imageUploadDisabled: null,
+      uploadBrewChart: vi.fn(),
+    };
+
+    try {
+      const poller = new ShotPoller(gaggimate as any, notion as any, {
+        intervalMs: 1000,
+        dataDir,
+        recentShotLookbackCount: 5,
+        brewTitleTimeZone: "America/Los_Angeles",
+      });
+
+      // Poll 1: device unreachable — enters cooldown
+      await (poller as any).poll();
+      expect(gaggimate.fetchShotHistory).toHaveBeenCalledTimes(1);
+      expect((poller as any).connectivityCooldownUntil).toBeGreaterThan(Date.now());
+
+      // Poll 2: still in cooldown — fetchShotHistory must NOT be called again
+      await (poller as any).poll();
+      expect(gaggimate.fetchShotHistory).toHaveBeenCalledTimes(1); // unchanged
+
+      // Simulate cooldown expiry
+      (poller as any).connectivityCooldownUntil = 0;
+
+      // Poll 3: cooldown cleared — device now responds, connectivity restored
+      await (poller as any).poll();
+      expect(gaggimate.fetchShotHistory).toHaveBeenCalledTimes(2);
+      expect((poller as any).connectivityCooldownUntil).toBe(0); // cleared on success
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it("treats EHOSTUNREACH as connectivity issue and skips noisy fatal errors", async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "shot-poller-test-"));
     const networkError: any = new TypeError("fetch failed");

@@ -20,6 +20,10 @@ export class ShotPoller {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   private connectivityWarningActive = false;
+  // When set, poll() returns early until this timestamp passes (avoids hammering an
+  // offline device every interval — resets as soon as the device responds again).
+  private connectivityCooldownUntil = 0;
+  private readonly CONNECTIVITY_COOLDOWN_MS = 3 * 60_000; // 3 minutes
   private state: SyncState;
   // Tracks shots confirmed fully synced (brew + chart + JSON) so lookback skips them.
   private fullySyncedShots = new Set<string>();
@@ -141,6 +145,7 @@ export class ShotPoller {
       console.warn(`Shot poller: GaggiMate unreachable (${summary}), will retry next interval`);
       this.connectivityWarningActive = true;
     }
+    this.connectivityCooldownUntil = Date.now() + this.CONNECTIVITY_COOLDOWN_MS;
   }
 
   private clearConnectivityWarning(): void {
@@ -148,12 +153,17 @@ export class ShotPoller {
       console.log("Shot poller: GaggiMate connectivity restored");
       this.connectivityWarningActive = false;
     }
+    this.connectivityCooldownUntil = 0;
   }
 
   private async poll(): Promise<void> {
     // Prevent overlapping polls — log once per overlap event so slow polls are visible.
     if (this.running) {
       console.log("Shot poller: previous poll still in progress, skipping interval");
+      return;
+    }
+    // Skip the poll body entirely while the device is in connectivity cooldown.
+    if (Date.now() < this.connectivityCooldownUntil) {
       return;
     }
     this.running = true;
@@ -174,6 +184,18 @@ export class ShotPoller {
 
       // Parse IDs once for efficient filtering and sorting
       const lastId = state.lastSyncedShotId ? parseInt(state.lastSyncedShotId, 10) : 0;
+
+      // Prune fullySyncedShots entries well outside the lookback window — they'll
+      // never be revisited and there's no point holding them in memory indefinitely.
+      const pruneBelow = lastId - this.options.recentShotLookbackCount * 3;
+      if (pruneBelow > 0) {
+        for (const id of this.fullySyncedShots) {
+          if (parseInt(id, 10) < pruneBelow) {
+            this.fullySyncedShots.delete(id);
+          }
+        }
+      }
+
       const shotNumericIds = new Map<string, number>();
       for (const s of shots) {
         shotNumericIds.set(s.id, parseInt(s.id, 10));

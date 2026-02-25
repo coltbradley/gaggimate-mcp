@@ -190,6 +190,27 @@ describe("pushProfileToGaggiMate", () => {
     expect(notion.updatePushStatus).toHaveBeenCalledWith("page-8", "Failed");
   });
 
+  it("rejects profile with more than 20 phases", async () => {
+    const gaggimate = createMockGaggiMate();
+    const notion = createMockNotion();
+
+    const phases = Array.from({ length: 21 }, (_, i) => ({
+      name: `Phase ${i}`,
+      phase: "brew",
+      duration: 5,
+    }));
+
+    await pushProfileToGaggiMate(
+      gaggimate as any,
+      notion as any,
+      "page-phases",
+      JSON.stringify({ temperature: 93, phases }),
+    );
+
+    expect(gaggimate.saveProfile).not.toHaveBeenCalled();
+    expect(notion.updatePushStatus).toHaveBeenCalledWith("page-phases", "Failed");
+  });
+
   it("sets status to Failed when saveProfile fails", async () => {
     const gaggimate = createMockGaggiMate();
     gaggimate.saveProfile.mockRejectedValue(new Error("Connection refused"));
