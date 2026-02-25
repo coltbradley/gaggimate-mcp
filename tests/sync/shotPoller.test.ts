@@ -78,6 +78,120 @@ describe("ShotPoller", () => {
     }
   });
 
+  it("skips in-progress shots flagged incomplete in the index without fetching the shot file", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "shot-poller-test-"));
+
+    const gaggimate = {
+      // Index returns a shot that is still recording (SHOT_FLAG_COMPLETED not set)
+      fetchShotHistory: vi.fn().mockResolvedValue([{ id: "5", incomplete: true }]),
+      fetchShot: vi.fn(),
+      fetchProfiles: vi.fn(),
+      uploadBrewChart: vi.fn(),
+    };
+
+    const notion = {
+      findBrewByShotId: vi.fn(),
+      hasProfileByName: vi.fn(),
+      normalizeProfileName: vi.fn(),
+      createDraftProfile: vi.fn(),
+      uploadProfileImage: vi.fn(),
+      createBrew: vi.fn(),
+      updateBrewFromData: vi.fn(),
+      brewHasProfileImage: vi.fn(),
+      imageUploadDisabled: null,
+      uploadBrewChart: vi.fn(),
+    };
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      const poller = new ShotPoller(gaggimate as any, notion as any, {
+        intervalMs: 1000,
+        dataDir,
+        recentShotLookbackCount: 5,
+        brewTitleTimeZone: "America/Los_Angeles",
+      });
+
+      await (poller as any).poll();
+
+      // Must not hit the network for the shot file — the index flag is sufficient
+      expect(gaggimate.fetchShot).not.toHaveBeenCalled();
+      // Must not create or update any Notion entry
+      expect(notion.createBrew).not.toHaveBeenCalled();
+      expect(notion.updateBrewFromData).not.toHaveBeenCalled();
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("still recording"));
+    } finally {
+      logSpy.mockRestore();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("repairs stale brews with empty JSON on first poll by re-syncing JSON and chart", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "shot-poller-test-"));
+
+    // Shot 2 was already synced (id <= lastSyncedShotId) but with empty JSON.
+    // Shot 3 is a new shot that will be synced normally this poll.
+    const staleShot = createMockShotData(); // has samples, so GaggiMate now has real data
+
+    const gaggimate = {
+      fetchShotHistory: vi.fn().mockResolvedValue([
+        { id: "2", incomplete: false }, // previously synced — stale
+        { id: "3", incomplete: false }, // new shot
+      ]),
+      fetchShot: vi.fn().mockResolvedValue({ ...staleShot, id: "2" }),
+      fetchProfiles: vi.fn().mockResolvedValue([{ label: "Device Profile", id: "profile-1" }]),
+      uploadBrewChart: vi.fn().mockResolvedValue(true),
+    };
+
+    const notion = {
+      findBrewByShotId: vi.fn()
+        .mockResolvedValueOnce("existing-brew-2") // repair scan finds brew for shot 2
+        .mockResolvedValueOnce("existing-brew-2") // repair: getBrewShotJson page call
+        .mockResolvedValueOnce(null),             // main loop: shot 3 is new
+      getBrewShotJson: vi.fn().mockResolvedValue(
+        JSON.stringify({ metadata: { sample_count: 0 } }) // stale!
+      ),
+      hasProfileByName: vi.fn().mockResolvedValue(true),
+      normalizeProfileName: vi.fn().mockImplementation((name: string) => name.trim().toLowerCase()),
+      createDraftProfile: vi.fn(),
+      uploadProfileImage: vi.fn(),
+      createBrew: vi.fn().mockResolvedValue("brew-3"),
+      updateBrewFromData: vi.fn().mockResolvedValue(undefined),
+      brewHasProfileImage: vi.fn().mockResolvedValue(false),
+      imageUploadDisabled: null,
+      uploadBrewChart: vi.fn().mockResolvedValue(true),
+    };
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      const poller = new ShotPoller(gaggimate as any, notion as any, {
+        intervalMs: 1000,
+        dataDir,
+        recentShotLookbackCount: 5,
+        brewTitleTimeZone: "America/Los_Angeles",
+      });
+
+      // Seed sync state so shot 2 is considered "already synced" (in lookback, not new)
+      (poller as any).state.lastSyncedShotId = "2";
+
+      await (poller as any).poll();
+
+      // Repair: should have updated the stale brew's JSON and re-uploaded the chart
+      expect(notion.getBrewShotJson).toHaveBeenCalled();
+      expect(notion.updateBrewFromData).toHaveBeenCalledWith(
+        "existing-brew-2",
+        expect.objectContaining({ activityId: "2" }),
+        expect.stringContaining('"sample_count"'),
+      );
+      expect(notion.uploadBrewChart).toHaveBeenCalledWith("existing-brew-2", "2", expect.any(Object));
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("repaired stale brew"));
+    } finally {
+      logSpy.mockRestore();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it("treats EHOSTUNREACH as connectivity issue and skips noisy fatal errors", async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "shot-poller-test-"));
     const networkError: any = new TypeError("fetch failed");

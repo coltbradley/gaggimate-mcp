@@ -78,6 +78,13 @@ export class NotionClient {
     await this.updateBrew(pageId, properties);
   }
 
+  /** Read the Shot JSON property from a brew page */
+  async getBrewShotJson(pageId: string): Promise<string | null> {
+    const page = await this.client.pages.retrieve({ page_id: pageId }) as any;
+    const text = this.extractRichText(page, "Shot JSON");
+    return text || null;
+  }
+
   /** Find an existing brew by GaggiMate shot ID (dedup check) */
   async findBrewByShotId(shotId: string): Promise<string | null> {
     const response = await this.client.databases.query({
