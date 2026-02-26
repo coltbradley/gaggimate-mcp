@@ -47,6 +47,9 @@ export class GaggiMateClient {
   // Shared WebSocket connection — reused across sequential requests to avoid
   // per-request TCP + WS handshake overhead. Closed after WS_IDLE_TTL ms of inactivity.
   private sharedWs: WebSocket | null = null;
+  // Tracks an in-flight connection attempt so concurrent callers can share it
+  // instead of creating competing CONNECTING sockets.
+  private sharedWsConnectPromise: Promise<WebSocket> | null = null;
   private sharedWsIdleTimer: NodeJS.Timeout | null = null;
   private pendingRequests = new Map<string, PendingRequest>();
   private readonly WS_IDLE_TTL = 8000;
@@ -113,6 +116,10 @@ export class GaggiMateClient {
       return Promise.resolve(this.sharedWs);
     }
 
+    if (this.sharedWsConnectPromise) {
+      return this.sharedWsConnectPromise;
+    }
+
     // Close any stale connecting/closing socket before opening a new one.
     if (this.sharedWs) {
       const stale = this.sharedWs;
@@ -123,25 +130,48 @@ export class GaggiMateClient {
       }
     }
 
-    return new Promise((resolve, reject) => {
+    const connectPromise = new Promise<WebSocket>((resolve, reject) => {
+      let settled = false;
       const ws = new WebSocket(this.wsUrl);
       this.sharedWs = ws;
 
-      ws.on("open", () => resolve(ws));
+      const settleResolve = (value: WebSocket) => {
+        if (settled) return;
+        settled = true;
+        if (this.sharedWsConnectPromise === connectPromise) {
+          this.sharedWsConnectPromise = null;
+        }
+        resolve(value);
+      };
+
+      const settleReject = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        if (this.sharedWsConnectPromise === connectPromise) {
+          this.sharedWsConnectPromise = null;
+        }
+        reject(error);
+      };
+
+      ws.on("open", () => settleResolve(ws));
 
       ws.on("message", (data: WebSocket.Data) => this.handleSharedMessage(data));
 
       ws.on("error", (err) => {
         if (this.sharedWs === ws) this.sharedWs = null;
         this.rejectAllPending(`WebSocket error: ${err.message}`);
-        reject(new Error(`WebSocket error: ${err.message}`));
+        settleReject(new Error(`WebSocket error: ${err.message}`));
       });
 
       ws.on("close", () => {
         if (this.sharedWs === ws) this.sharedWs = null;
         this.rejectAllPending("WebSocket closed unexpectedly");
+        settleReject(new Error("WebSocket closed unexpectedly"));
       });
     });
+
+    this.sharedWsConnectPromise = connectPromise;
+    return connectPromise;
   }
 
   /**
