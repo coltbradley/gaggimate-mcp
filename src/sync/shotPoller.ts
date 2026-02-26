@@ -256,6 +256,33 @@ export class ShotPoller {
         console.log(`Found ${newShots.length} new shot(s) to sync`);
       }
       const syncedIds: string[] = [];
+      let contiguousLastSyncedId = lastId;
+      const syncedButBlockedByGap = new Set<number>();
+      const skippedButBlockedByGap = new Set<number>();
+      const tryAdvanceContiguousCursor = () => {
+        while (true) {
+          const nextId = contiguousLastSyncedId + 1;
+          if (syncedButBlockedByGap.has(nextId)) {
+            syncedButBlockedByGap.delete(nextId);
+            contiguousLastSyncedId = nextId;
+            const advancedId = String(nextId);
+            state.recordSync(advancedId);
+            syncedIds.push(advancedId);
+            continue;
+          }
+
+          if (skippedButBlockedByGap.has(nextId)) {
+            skippedButBlockedByGap.delete(nextId);
+            contiguousLastSyncedId = nextId;
+            state.lastSyncedShotId = String(nextId);
+            state.lastSyncTime = new Date().toISOString();
+            state.save();
+            continue;
+          }
+
+          break;
+        }
+      };
 
       for (const shotListItem of candidateShots) {
         try {
@@ -281,6 +308,8 @@ export class ShotPoller {
             // If a non-newest shot stays incomplete forever (e.g. aborted write), don't
             // block newer completed shots behind it.
             console.warn(`Shot ${shotListItem.id}: stale incomplete index entry, skipping`);
+            skippedButBlockedByGap.add(numId(shotListItem));
+            tryAdvanceContiguousCursor();
             continue;
           }
 
@@ -304,6 +333,8 @@ export class ShotPoller {
               break;
             }
             console.warn(`Shot ${shotListItem.id}: stale incomplete shot file, skipping`);
+            skippedButBlockedByGap.add(numId(shotListItem));
+            tryAdvanceContiguousCursor();
             continue;
           }
 
@@ -367,20 +398,19 @@ export class ShotPoller {
             pageId = existing;
             hasImageResult = imageResult;
             if (isNewShot) {
-              state.recordSync(shotListItem.id);
-              syncedIds.push(shotListItem.id);
               console.log(`Shot ${shotListItem.id}: updated existing Notion brew as "${brewData.title}"`);
             }
           } else {
             // Shot JSON included in the create call — no separate update needed.
             // Brand-new pages have no chart image, so skip the image-presence read.
             pageId = await this.notion.createBrew(brewData, shotJsonStr);
-            if (isNewShot) {
-              state.recordSync(shotListItem.id);
-              syncedIds.push(shotListItem.id);
-            }
             console.log(`Shot ${shotListItem.id}: synced to Notion as "${brewData.title}"`);
             hasImageResult = { status: "fulfilled", value: false };
+          }
+
+          if (isNewShot) {
+            syncedButBlockedByGap.add(numId(shotListItem));
+            tryAdvanceContiguousCursor();
           }
 
           const imagePresent = hasImageResult.status === "fulfilled" && hasImageResult.value;

@@ -179,6 +179,76 @@ describe("ShotPoller", () => {
     }
   });
 
+  it("only advances lastSyncedShotId contiguously so failed gaps are retried", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "shot-poller-test-"));
+    const brewByShot = new Map<string, string>();
+    let shot2CreateAttempts = 0;
+
+    const gaggimate = {
+      fetchShotHistory: vi.fn().mockResolvedValue([
+        { id: "3", incomplete: false },
+        { id: "2", incomplete: false },
+        { id: "1", incomplete: false },
+      ]),
+      fetchShot: vi.fn().mockImplementation((shotId: string) => Promise.resolve({
+        ...createMockShotData(),
+        id: shotId,
+        profileId: "profile-1",
+        profileName: "Device Profile",
+      })),
+      fetchProfiles: vi.fn(),
+      uploadBrewChart: vi.fn(),
+    };
+
+    const notion = {
+      findBrewByShotId: vi.fn().mockImplementation((shotId: string) => Promise.resolve(brewByShot.get(shotId) ?? null)),
+      hasProfileByName: vi.fn().mockResolvedValue(true),
+      normalizeProfileName: vi.fn().mockImplementation((name: string) => name.trim().toLowerCase()),
+      createDraftProfile: vi.fn(),
+      uploadProfileImage: vi.fn(),
+      createBrew: vi.fn().mockImplementation((brew: any) => {
+        const shotId = String(brew.activityId);
+        if (shotId === "2") {
+          shot2CreateAttempts += 1;
+          if (shot2CreateAttempts === 1) {
+            return Promise.reject(new Error("transient Notion create failure"));
+          }
+        }
+        const pageId = `brew-${shotId}`;
+        brewByShot.set(shotId, pageId);
+        return Promise.resolve(pageId);
+      }),
+      updateBrewFromData: vi.fn().mockResolvedValue(undefined),
+      brewHasProfileImage: vi.fn().mockResolvedValue(true),
+      imageUploadDisabled: "disabled",
+      uploadBrewChart: vi.fn().mockResolvedValue(false),
+    };
+
+    try {
+      const poller = new ShotPoller(gaggimate as any, notion as any, {
+        intervalMs: 1000,
+        dataDir,
+        recentShotLookbackCount: 5,
+        brewTitleTimeZone: "America/Los_Angeles",
+        repairIntervalMs: -1,
+      });
+
+      await (poller as any).poll();
+      expect((poller as any).state.lastSyncedShotId).toBe("1");
+
+      await (poller as any).poll();
+      expect((poller as any).state.lastSyncedShotId).toBe("3");
+      expect(shot2CreateAttempts).toBe(2);
+      expect(notion.updateBrewFromData).toHaveBeenCalledWith(
+        "brew-3",
+        expect.objectContaining({ activityId: "3" }),
+        expect.any(String),
+      );
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it("repairs stale brews with empty JSON and missing chart image by re-syncing both", async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "shot-poller-test-"));
 
