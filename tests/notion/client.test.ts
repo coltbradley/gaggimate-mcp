@@ -352,4 +352,29 @@ describe("NotionClient profile helpers", () => {
     // createBrew used pages.create only; read lookup should be cache hit.
     expect(mockClient.databases.query).not.toHaveBeenCalled();
   });
+
+  it("reads brew Shot JSON and Brew Profile image state in one call", async () => {
+    const { notion, mockClient } = createNotionClient();
+    mockClient.pages.retrieve.mockResolvedValue({
+      properties: {
+        "Shot JSON": richTextProperty("{\"metadata\":{\"sample_count\":5}}"),
+        "Brew Profile": {
+          type: "files",
+          files: [{ name: "brew.svg" }],
+        },
+      },
+    });
+
+    const state = await notion.getBrewShotSyncState("brew-page");
+    expect(state).toEqual({
+      shotJson: "{\"metadata\":{\"sample_count\":5}}",
+      hasProfileImage: true,
+    });
+
+    const shotJson = await notion.getBrewShotJson("brew-page");
+    const imagePresent = await notion.brewHasProfileImage("brew-page");
+    expect(shotJson).toBe("{\"metadata\":{\"sample_count\":5}}");
+    expect(imagePresent).toBe(true);
+    expect(mockClient.pages.retrieve).toHaveBeenCalledTimes(3);
+  });
 });

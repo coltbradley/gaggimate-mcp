@@ -128,11 +128,22 @@ export class ShotPoller {
         const existing = await this.notion.findBrewByShotId(shotListItem.id);
         if (!existing) continue;
 
-        // Check both JSON staleness and image presence in parallel.
-        const [existingJson, imagePresent] = await Promise.all([
-          this.notion.getBrewShotJson(existing),
-          this.notion.imageUploadDisabled ? Promise.resolve(true) : this.notion.brewHasProfileImage(existing),
-        ]);
+        // Use a single Notion page read for Shot JSON + image state when available.
+        let existingJson: string | null;
+        let imagePresent: boolean;
+        const notionWithCombinedState = this.notion as NotionClient & {
+          getBrewShotSyncState?: (pageId: string) => Promise<{ shotJson: string | null; hasProfileImage: boolean }>;
+        };
+        if (typeof notionWithCombinedState.getBrewShotSyncState === "function") {
+          const state = await notionWithCombinedState.getBrewShotSyncState(existing);
+          existingJson = state.shotJson;
+          imagePresent = this.notion.imageUploadDisabled ? true : state.hasProfileImage;
+        } else {
+          [existingJson, imagePresent] = await Promise.all([
+            this.notion.getBrewShotJson(existing),
+            this.notion.imageUploadDisabled ? Promise.resolve(true) : this.notion.brewHasProfileImage(existing),
+          ]);
+        }
 
         const shotJsonStale = this.isBrewJsonStale(existingJson);
 

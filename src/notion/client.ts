@@ -101,9 +101,8 @@ export class NotionClient {
 
   /** Read the Shot JSON property from a brew page */
   async getBrewShotJson(pageId: string): Promise<string | null> {
-    const page = await this.client.pages.retrieve({ page_id: pageId }) as any;
-    const text = this.extractRichText(page, "Shot JSON");
-    return text || null;
+    const state = await this.getBrewShotSyncState(pageId);
+    return state.shotJson;
   }
 
   /** Find an existing brew by GaggiMate shot ID (dedup check) */
@@ -196,12 +195,20 @@ export class NotionClient {
   /** Check whether a brew page already has a Brew Profile image */
   async brewHasProfileImage(pageId: string): Promise<boolean> {
     try {
-      const page = await this.client.pages.retrieve({ page_id: pageId }) as any;
-      const prop = page.properties?.["Brew Profile"];
-      return prop?.type === "files" && Array.isArray(prop.files) && prop.files.length > 0;
+      const state = await this.getBrewShotSyncState(pageId);
+      return state.hasProfileImage;
     } catch {
       return false;
     }
+  }
+
+  /** Read both Shot JSON and Brew Profile image state in one page retrieve call */
+  async getBrewShotSyncState(pageId: string): Promise<{ shotJson: string | null; hasProfileImage: boolean }> {
+    const page = await this.client.pages.retrieve({ page_id: pageId }) as any;
+    const shotJson = this.extractRichText(page, "Shot JSON") || null;
+    const brewProfile = page.properties?.["Brew Profile"];
+    const hasProfileImage = brewProfile?.type === "files" && Array.isArray(brewProfile.files) && brewProfile.files.length > 0;
+    return { shotJson, hasProfileImage };
   }
 
   /** Render + upload a brew chart SVG to the Brew Profile files property */
