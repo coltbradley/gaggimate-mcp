@@ -59,7 +59,7 @@ Copy `.env.example` to `.env` and fill in your values. Never commit `.env` — i
 | `NOTION_BREWS_DB_ID` | Notion Brews database ID | required |
 | `NOTION_PROFILES_DB_ID` | Notion Profiles database ID | required |
 | `NOTION_BEANS_DB_ID` | Notion Beans database ID | optional |
-| `WEBHOOK_SECRET` | Notion webhook verification token — if set, signatures are validated | optional |
+| `WEBHOOK_SECRET` | Notion webhook verification token (raw token, not `sha256=...`) — if set, signatures are validated | optional |
 | `SYNC_INTERVAL_MS` | Shot polling interval (ms) | `30000` |
 | `RECENT_SHOT_LOOKBACK_COUNT` | Recent shots to re-check each poll | `5` |
 | `BREW_REPAIR_INTERVAL_MS` | How often to scan for stale/missing brew data (ms) | `3600000` (1h) |

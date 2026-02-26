@@ -387,6 +387,7 @@ This gives you a public URL like `https://your-machine.tail12345.ts.net`.
    ```
    WEBHOOK_SECRET=your_webhook_verification_token_here
    ```
+   - Use the raw verification token value from Notion settings, not the `x-notion-signature` header (`sha256=...`).
    - If set, webhook signatures are verified.
    - If unset, webhook events are accepted unsigned (safest only on trusted/private networks).
 6. Restart the bridge service

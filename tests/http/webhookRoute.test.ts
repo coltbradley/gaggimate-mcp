@@ -362,4 +362,47 @@ describe("webhook route status handling", () => {
       (config as any).sync.profileSyncSelectedToDevice = originalSyncSelected;
     }
   });
+
+  it("rejects invalid signatures and throttles mismatch log spam", async () => {
+    const originalSecret = config.webhook.secret;
+    (config as any).webhook.secret = "verification-token";
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const gaggimate = createMockGaggimate();
+      const notion = createMockNotion();
+      const router = createWebhookRouter(gaggimate as any, notion as any);
+      const handler = getNotionWebhookHandler(router);
+
+      const req = {
+        body: {
+          type: "page.properties_updated",
+          entity: { type: "page", id: "page-bad-signature" },
+        },
+        headers: {
+          "x-notion-signature": "sha256=definitely-wrong",
+        },
+        rawBody: JSON.stringify({
+          type: "page.properties_updated",
+          entity: { type: "page", id: "page-bad-signature" },
+        }),
+      };
+
+      const res1 = createResponse();
+      await handler(req, res1);
+      expect(res1.statusCode).toBe(401);
+      expect(res1.jsonBody).toEqual({ error: "Invalid webhook signature" });
+
+      const res2 = createResponse();
+      await handler(req, res2);
+      expect(res2.statusCode).toBe(401);
+
+      // First mismatch logs with guidance; subsequent immediate retries are suppressed.
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(String(warnSpy.mock.calls[0][0])).toContain("Webhook signature mismatch — rejecting");
+      expect(String(warnSpy.mock.calls[0][0])).toContain("raw verification token");
+    } finally {
+      warnSpy.mockRestore();
+      (config as any).webhook.secret = originalSecret;
+    }
+  });
 });

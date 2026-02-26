@@ -117,8 +117,29 @@ async function processWebhookEvent(
 export function createWebhookRouter(gaggimate: GaggiMateClient, notion: NotionClient): Router {
   const router = Router();
   let warnedMissingSecret = false;
+  let signatureMismatchLogMutedUntil = 0;
+  let suppressedSignatureMismatchCount = 0;
+  const SIGNATURE_MISMATCH_LOG_INTERVAL_MS = 60_000;
   const inFlightPageProcessing = new Set<string>();
   const rerunRequestedForPage = new Set<string>();
+
+  const logSignatureMismatch = () => {
+    const now = Date.now();
+    if (now < signatureMismatchLogMutedUntil) {
+      suppressedSignatureMismatchCount += 1;
+      return;
+    }
+
+    const suppressedSummary = suppressedSignatureMismatchCount > 0
+      ? ` (${suppressedSignatureMismatchCount} additional mismatches suppressed in the last ${Math.round(SIGNATURE_MISMATCH_LOG_INTERVAL_MS / 1000)}s)`
+      : "";
+    console.warn(
+      `Webhook signature mismatch — rejecting${suppressedSummary}. ` +
+      "Check WEBHOOK_SECRET matches Notion's raw verification token (not a sha256=... signature value).",
+    );
+    suppressedSignatureMismatchCount = 0;
+    signatureMismatchLogMutedUntil = now + SIGNATURE_MISMATCH_LOG_INTERVAL_MS;
+  };
 
   const enqueuePageProcessing = (pageId: string, updatedProps: string[]) => {
     if (inFlightPageProcessing.has(pageId)) {
@@ -169,7 +190,7 @@ export function createWebhookRouter(gaggimate: GaggiMateClient, notion: NotionCl
         const signature = req.headers["x-notion-signature"];
         const trusted = isValidNotionWebhookSignature(rawBody, signature, config.webhook.secret);
         if (!trusted) {
-          console.warn("Webhook signature mismatch — rejecting");
+          logSignatureMismatch();
           res.status(401).json({ error: "Invalid webhook signature" });
           return;
         }

@@ -34,6 +34,11 @@ function validateConfig(): void {
   }
   if (!config.webhook.secret) {
     console.warn("WEBHOOK_SECRET is not set — webhook signature verification is disabled");
+  } else if (/^sha256=[a-f0-9]{64}$/i.test(config.webhook.secret)) {
+    console.warn(
+      "WEBHOOK_SECRET appears to be a signature digest (sha256=...) instead of Notion's verification token. " +
+      "Set WEBHOOK_SECRET to the raw webhook verification token from Notion integration settings.",
+    );
   }
 
   const deprecatedEnvMappings: Array<{ legacyKey: string; replacement: string }> = [
