@@ -18,10 +18,13 @@ describe("config", () => {
     expect(config.http.port).toBe(3000);
     expect(config.sync.intervalMs).toBe(30000);
     expect(config.sync.profileReconcileEnabled).toBe(true);
-    expect(config.sync.profileReconcileIntervalMs).toBe(30000);
+    expect(config.sync.profileReconcileIntervalMs).toBe(60000);
     expect(config.sync.profileReconcileDeleteEnabled).toBe(true);
     expect(config.sync.profileReconcileDeleteLimitPerRun).toBe(3);
     expect(config.sync.profileReconcileSaveLimitPerRun).toBe(5);
+    expect(config.sync.profileSyncSelectedToDevice).toBe(false);
+    expect(config.sync.profileSyncFavoriteToDevice).toBe(false);
+    expect(config.sync.importMissingProfilesFromShots).toBe(false);
   });
 
   it("parses boolean env flags case-insensitively and accepts zero delete limit", async () => {

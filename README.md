@@ -10,7 +10,7 @@ Forked from [Matvey-Kuk/gaggimate-mcp](https://github.com/Matvey-Kuk/gaggimate-m
 - **Pushes profiles** — When you (or Notion AI) set a profile's Push Status to "Queued" in Notion, the service pushes it to the GaggiMate within seconds
 - **Reconciles profiles** — Notion is the source of truth for bridge-managed profiles (`Queued`/`Pushed`/`Archived`), and unmatched machine-only profiles are imported as `Draft`
 - **Normalizes profile payloads** — Before device saves, phase defaults are applied (`valve`, `pump.target`, `pump.pressure`, `pump.flow`) for schema compatibility
-- **Syncs profile state** — `Favorite` and `Selected` checkboxes in Notion sync to GaggiMate for managed profiles
+- **Syncs profile state (opt-in)** — `Favorite` and `Selected` checkboxes in Notion can sync to GaggiMate for managed profiles
 - **Generates profile charts** — Auto-attaches a pressure/flow chart image to `Profile Image` for imported machine profiles when missing
 - **Repairs stale brew data** — Hourly background scan detects brews with empty Shot JSON or missing chart images and re-syncs them
 - **Backfills brew/profile links** — Automatically links existing brews to profiles when `Activity ID` + shot metadata identifies the profile
@@ -64,12 +64,13 @@ Copy `.env.example` to `.env` and fill in your values. Never commit `.env` — i
 | `RECENT_SHOT_LOOKBACK_COUNT` | Recent shots to re-check each poll | `5` |
 | `BREW_REPAIR_INTERVAL_MS` | How often to scan for stale/missing brew data (ms) | `3600000` (1h) |
 | `PROFILE_RECONCILE_ENABLED` | Enable profile reconciler | `true` |
-| `PROFILE_RECONCILE_INTERVAL_MS` | Reconciler interval (ms) | `30000` |
+| `PROFILE_RECONCILE_INTERVAL_MS` | Reconciler interval (ms) | `60000` |
 | `PROFILE_RECONCILE_DELETE_ENABLED` | Allow deleting Archived profiles from device | `true` |
 | `PROFILE_RECONCILE_DELETE_LIMIT_PER_RUN` | Max device deletes per reconcile cycle | `3` |
 | `PROFILE_RECONCILE_SAVE_LIMIT_PER_RUN` | Max device saves per reconcile cycle | `5` |
 | `PROFILE_SYNC_SELECTED_TO_DEVICE` | When false (default), bridge does not overwrite device selection with Notion — lets you change profiles on the GaggiMate | `false` |
-| `PROFILE_SYNC_FAVORITE_TO_DEVICE` | When false, bridge does not overwrite device favorite state with Notion | `true` |
+| `PROFILE_SYNC_FAVORITE_TO_DEVICE` | When false (default), bridge does not overwrite device favorite state with Notion | `false` |
+| `IMPORT_MISSING_PROFILES_FROM_SHOTS` | When true, shot sync fetches profiles from device to auto-import missing Notion profiles | `false` |
 | `BREW_TITLE_TIMEZONE` | Timezone for brew title date/AM/PM labels | `America/Los_Angeles` |
 | `HTTP_PORT` | HTTP server port | `3000` |
 | `DATA_DIR` | Persistent data directory (sync state) | `./data` |

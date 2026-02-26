@@ -114,7 +114,7 @@ Bridge-managed fields in `Profiles`:
 - `Last Pushed`
 - `Active on Machine`
 - `Profile JSON` `id` writeback on first successful push
-- `Favorite`/`Selected` sync execution to device (Notion -> device)
+- `Favorite`/`Selected` sync execution to device (Notion -> device, opt-in via env flags)
 
 User/AI-managed fields in `Profiles`:
 - `Profile Name`
@@ -129,7 +129,8 @@ User/AI-managed fields in `Profiles`:
 
 - If a `Pushed` profile differs from device, bridge pushes Notion JSON to device.
 - Device-only profiles are imported as `Draft`.
-- Webhook updates for `Queued` push immediately, and webhook updates for `Pushed` apply `Favorite`/`Selected` immediately.
+- Webhook updates for `Queued` push immediately.
+- Webhook updates for `Pushed` apply `Favorite`/`Selected` only when `PROFILE_SYNC_FAVORITE_TO_DEVICE` / `PROFILE_SYNC_SELECTED_TO_DEVICE` are enabled.
 - Archived non-utility profiles are deleted from device.
 - Destructive delete behavior can be disabled with `PROFILE_RECONCILE_DELETE_ENABLED=false`.
 - Deletes are rate-limited per cycle by `PROFILE_RECONCILE_DELETE_LIMIT_PER_RUN` (default `3`) as a safety guard.

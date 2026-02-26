@@ -67,6 +67,7 @@ describe("ShotPoller", () => {
         recentShotLookbackCount: 5,
         brewTitleTimeZone: "America/Los_Angeles",
         repairIntervalMs: -1, // disable periodic repair for this test
+        importMissingProfilesFromShots: true,
       });
 
       await (poller as any).poll();

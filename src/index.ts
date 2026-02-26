@@ -67,6 +67,7 @@ async function main() {
   console.log(`  GaggiMate: ${config.gaggimate.protocol}://${config.gaggimate.host}`);
   console.log(`  HTTP port: ${config.http.port}`);
   console.log(`  Shot sync interval: ${config.sync.intervalMs}ms`);
+  console.log(`  Import missing profiles during shot sync: ${config.sync.importMissingProfilesFromShots}`);
   console.log(`  Profile reconciler: ${config.sync.profileReconcileEnabled}`);
   if (config.sync.profileReconcileEnabled) {
     console.log(`  Profile reconcile interval: ${config.sync.profileReconcileIntervalMs}ms`);
@@ -89,6 +90,7 @@ async function main() {
     recentShotLookbackCount: config.sync.recentShotLookbackCount,
     brewTitleTimeZone: config.time.brewTitleTimeZone,
     repairIntervalMs: config.sync.brewRepairIntervalMs,
+    importMissingProfilesFromShots: config.sync.importMissingProfilesFromShots,
   });
 
   // Start HTTP server

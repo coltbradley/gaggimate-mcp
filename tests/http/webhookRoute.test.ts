@@ -81,36 +81,42 @@ describe("webhook route status handling", () => {
   });
 
   it("syncs favorite in background for Pushed profiles", async () => {
-    const gaggimate = createMockGaggimate();
-    const notion = createMockNotion();
-    notion.getProfilePageData.mockResolvedValue({
-      profileJson: JSON.stringify({ id: "device-123", label: "Profile" }),
-      pushStatus: "Pushed",
-      favorite: true,
-      selected: true,
-    });
-    notion.extractProfileIdFromJson.mockReturnValue("device-123");
+    const originalSyncFavorite = config.sync.profileSyncFavoriteToDevice;
+    (config as any).sync.profileSyncFavoriteToDevice = true;
+    try {
+      const gaggimate = createMockGaggimate();
+      const notion = createMockNotion();
+      notion.getProfilePageData.mockResolvedValue({
+        profileJson: JSON.stringify({ id: "device-123", label: "Profile" }),
+        pushStatus: "Pushed",
+        favorite: true,
+        selected: true,
+      });
+      notion.extractProfileIdFromJson.mockReturnValue("device-123");
 
-    const router = createWebhookRouter(gaggimate as any, notion as any);
-    const handler = getNotionWebhookHandler(router);
-    const req = createSignedRequest({
-      type: "page.properties_updated",
-      entity: { type: "page", id: "page-1" },
-    });
-    const res = createResponse();
+      const router = createWebhookRouter(gaggimate as any, notion as any);
+      const handler = getNotionWebhookHandler(router);
+      const req = createSignedRequest({
+        type: "page.properties_updated",
+        entity: { type: "page", id: "page-1" },
+      });
+      const res = createResponse();
 
-    await handler(req, res);
+      await handler(req, res);
 
-    // Handler responds immediately with "accepted"
-    expect(res.statusCode).toBe(200);
-    expect(res.jsonBody).toEqual({ ok: true, action: "accepted" });
+      // Handler responds immediately with "accepted"
+      expect(res.statusCode).toBe(200);
+      expect(res.jsonBody).toEqual({ ok: true, action: "accepted" });
 
-    // Wait for background processing to complete (mocks resolve on microtask ticks)
-    await vi.waitFor(() => {
-      expect(gaggimate.favoriteProfile).toHaveBeenCalledWith("device-123", true);
-    });
-    expect(gaggimate.selectProfile).not.toHaveBeenCalled();
-    expect(gaggimate.saveProfile).not.toHaveBeenCalled();
+      // Wait for background processing to complete (mocks resolve on microtask ticks)
+      await vi.waitFor(() => {
+        expect(gaggimate.favoriteProfile).toHaveBeenCalledWith("device-123", true);
+      });
+      expect(gaggimate.selectProfile).not.toHaveBeenCalled();
+      expect(gaggimate.saveProfile).not.toHaveBeenCalled();
+    } finally {
+      (config as any).sync.profileSyncFavoriteToDevice = originalSyncFavorite;
+    }
   });
 
   it("syncs selected when PROFILE_SYNC_SELECTED_TO_DEVICE is enabled", async () => {
@@ -149,37 +155,43 @@ describe("webhook route status handling", () => {
   it("syncs preferences for Pushed profiles even when updated_properties contains only property IDs", async () => {
     // Notion webhooks send internal property IDs (e.g. "CqzA", "{_w?"), not display names.
     // Preference sync must run regardless of the updated_properties content.
-    const gaggimate = createMockGaggimate();
-    const notion = createMockNotion();
-    notion.getProfilePageData.mockResolvedValue({
-      profileJson: JSON.stringify({ id: "device-456", label: "Profile" }),
-      pushStatus: "Pushed",
-      favorite: false,
-      selected: false,
-    });
-    notion.extractProfileIdFromJson.mockReturnValue("device-456");
+    const originalSyncFavorite = config.sync.profileSyncFavoriteToDevice;
+    (config as any).sync.profileSyncFavoriteToDevice = true;
+    try {
+      const gaggimate = createMockGaggimate();
+      const notion = createMockNotion();
+      notion.getProfilePageData.mockResolvedValue({
+        profileJson: JSON.stringify({ id: "device-456", label: "Profile" }),
+        pushStatus: "Pushed",
+        favorite: false,
+        selected: false,
+      });
+      notion.extractProfileIdFromJson.mockReturnValue("device-456");
 
-    const router = createWebhookRouter(gaggimate as any, notion as any);
-    const handler = getNotionWebhookHandler(router);
-    const req = createSignedRequest({
-      type: "page.properties_updated",
-      entity: { type: "page", id: "page-2" },
-      data: {
-        // Notion property IDs — not human-readable names like "Favorite" or "Selected"
-        updated_properties: ["%7B_w%3F", "CqzA"],
-      },
-    });
-    const res = createResponse();
+      const router = createWebhookRouter(gaggimate as any, notion as any);
+      const handler = getNotionWebhookHandler(router);
+      const req = createSignedRequest({
+        type: "page.properties_updated",
+        entity: { type: "page", id: "page-2" },
+        data: {
+          // Notion property IDs — not human-readable names like "Favorite" or "Selected"
+          updated_properties: ["%7B_w%3F", "CqzA"],
+        },
+      });
+      const res = createResponse();
 
-    await handler(req, res);
-    expect(res.jsonBody).toEqual({ ok: true, action: "accepted" });
+      await handler(req, res);
+      expect(res.jsonBody).toEqual({ ok: true, action: "accepted" });
 
-    // Preference sync must still fire even though the property IDs don't match "Favorite"/"Selected"
-    await vi.waitFor(() => {
-      expect(gaggimate.favoriteProfile).toHaveBeenCalledWith("device-456", false);
-    });
-    expect(gaggimate.selectProfile).not.toHaveBeenCalled();
-    expect(gaggimate.saveProfile).not.toHaveBeenCalled();
+      // Preference sync must still fire even though the property IDs don't match "Favorite"/"Selected"
+      await vi.waitFor(() => {
+        expect(gaggimate.favoriteProfile).toHaveBeenCalledWith("device-456", false);
+      });
+      expect(gaggimate.selectProfile).not.toHaveBeenCalled();
+      expect(gaggimate.saveProfile).not.toHaveBeenCalled();
+    } finally {
+      (config as any).sync.profileSyncFavoriteToDevice = originalSyncFavorite;
+    }
   });
 
   it("ignores Archived status even if profile is selected/favorited", async () => {

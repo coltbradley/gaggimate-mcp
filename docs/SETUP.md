@@ -237,10 +237,13 @@ WEBHOOK_SECRET=
 # Defaults are fine for most setups
 SYNC_INTERVAL_MS=30000
 PROFILE_RECONCILE_ENABLED=true
-PROFILE_RECONCILE_INTERVAL_MS=30000
+PROFILE_RECONCILE_INTERVAL_MS=60000
 PROFILE_RECONCILE_DELETE_ENABLED=true
 PROFILE_RECONCILE_DELETE_LIMIT_PER_RUN=3
 PROFILE_RECONCILE_SAVE_LIMIT_PER_RUN=5
+PROFILE_SYNC_SELECTED_TO_DEVICE=false
+PROFILE_SYNC_FAVORITE_TO_DEVICE=false
+IMPORT_MISSING_PROFILES_FROM_SHOTS=false
 RECENT_SHOT_LOOKBACK_COUNT=5
 # How often to scan for brews with stale JSON or missing chart images (ms, default 1 hour)
 BREW_REPAIR_INTERVAL_MS=3600000
@@ -341,11 +344,11 @@ Pull an espresso shot on your machine. Within 30 seconds, a new entry should app
 3. Confirm `Active on Machine` is unchecked
 4. Repeat with a utility profile (`flush`/`descale`) and confirm it is not deleted
 
-### 8. Test Favorite/Selected sync
-1. For a `Pushed` profile, toggle `Favorite` in Notion
-2. Confirm favorite state changes on GaggiMate
-3. Check `Selected` in Notion for a profile
-4. Confirm that profile becomes selected on GaggiMate
+### 8. Test Favorite/Selected sync (optional)
+1. Set `PROFILE_SYNC_FAVORITE_TO_DEVICE=true` and/or `PROFILE_SYNC_SELECTED_TO_DEVICE=true` in `.env`
+2. Restart the bridge
+3. For a `Pushed` profile, toggle `Favorite` and/or `Selected` in Notion
+4. Confirm the corresponding state changes on GaggiMate
 
 ---
 
@@ -429,6 +432,8 @@ ghcr.io/graphite-productions/gaggimate-bridge:2026-02-25
 | Profile reconciler logs "3 saved/re-pushed" every cycle | Persistent field mismatch between Notion JSON and device profile | Check logs for `Profile reconciler: mismatch at ...` to identify the differing field; `targets: []` (empty array) is now automatically stripped and should not recur |
 | Control panel shows "Device offline" | Bridge can't reach GaggiMate (same as `reachable: false` in /health) | Fix GAGGIMATE_HOST, network, or Docker routing; control panel uses the bridge to talk to the device |
 | Can't change profiles on the GaggiMate — selection keeps reverting | Bridge overwrites device selection with Notion's Selected checkbox every 30s | Set `PROFILE_SYNC_SELECTED_TO_DEVICE=false` (default) so the device is the source of truth. Use the control panel or device UI to switch profiles. |
+| Favorite changes in Notion do not apply to device | Favorite sync is opt-in | Set `PROFILE_SYNC_FAVORITE_TO_DEVICE=true` and restart |
+| Shots sync but missing profiles are not auto-imported during shot polling | Shot-priority mode disables inline profile import by default | Set `IMPORT_MISSING_PROFILES_FROM_SHOTS=true` if you want shot polling to fetch/import profiles from device |
 
 ---
 

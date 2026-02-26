@@ -12,6 +12,7 @@ interface ShotPollerOptions {
   recentShotLookbackCount: number;
   brewTitleTimeZone: string;
   repairIntervalMs: number;
+  importMissingProfilesFromShots?: boolean;
 }
 
 export class ShotPoller {
@@ -317,7 +318,7 @@ export class ShotPoller {
 
           // If the shot references a profile that doesn't exist in Notion yet,
           // import only the matching device profile as Draft so the brew relation can link.
-          if (brewData.profileName) {
+          if (this.options.importMissingProfilesFromShots === true && brewData.profileName) {
             const profileExists = await this.notion.hasProfileByName(brewData.profileName);
             if (!profileExists) {
               const machineProfiles = await this.gaggimate.fetchProfiles();
