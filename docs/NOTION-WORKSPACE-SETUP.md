@@ -132,7 +132,7 @@ User/AI-managed fields in `Profiles`:
 - If a `Pushed` profile differs from device, bridge pushes Notion JSON to device.
 - Device-only profiles can be imported as `Draft` when import flags are enabled (`PROFILE_IMPORT_UNMATCHED_DEVICE_PROFILES` and/or `IMPORT_MISSING_PROFILES_FROM_SHOTS`).
 - Webhook updates for `Queued` push immediately.
-- Webhook updates for `Pushed` apply `Favorite`/`Selected` only when `PROFILE_SYNC_FAVORITE_TO_DEVICE` / `PROFILE_SYNC_SELECTED_TO_DEVICE` are enabled.
+- Webhook updates for `Queued`/`Pushed` apply `Favorite`/`Selected` only when `PROFILE_SYNC_FAVORITE_TO_DEVICE` / `PROFILE_SYNC_SELECTED_TO_DEVICE` are enabled.
 - `Selected` behavior is "select when checked"; unchecking does not send a deselect command.
 - Archived non-utility profiles are deleted from device.
 - Destructive delete behavior can be disabled with `PROFILE_RECONCILE_DELETE_ENABLED=false`.
@@ -164,7 +164,7 @@ Operational behavior:
 - Use Draft while editing.
 - Set Queued only when ready to push.
 - If a profile should be removed from the machine, set Push Status to Archived.
-- Use Favorite and Selected checkboxes to set machine favorite/active state for pushed profiles.
+- Use Favorite and Selected checkboxes to set machine favorite/active state for pushed/queued profiles when preference sync flags are enabled.
 
 Do not:
 - overwrite unrelated properties

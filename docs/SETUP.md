@@ -382,7 +382,7 @@ Prerequisite: enable at least one of:
 ### 8. Test Favorite/Selected sync (optional)
 1. Set `PROFILE_SYNC_FAVORITE_TO_DEVICE=true` and/or `PROFILE_SYNC_SELECTED_TO_DEVICE=true` in `.env`
 2. Restart the bridge
-3. For a `Pushed` profile, toggle `Favorite` and/or `Selected` in Notion
+3. For a `Pushed` or `Queued` profile, toggle `Favorite` and/or `Selected` in Notion
 4. Confirm the corresponding state changes on GaggiMate
 
 ---
