@@ -9,6 +9,8 @@ interface ProfileReconcilerOptions {
   deleteEnabled: boolean;
   maxDeletesPerRun: number;
   maxSavesPerRun: number;
+  syncSelectedToDevice?: boolean;
+  syncFavoriteToDevice?: boolean;
 }
 
 export class ProfileReconciler {
@@ -467,15 +469,21 @@ export class ProfileReconciler {
     const deviceSelected = Boolean(profileOnDevice?.selected);
 
     // Both operations are independent — run in parallel to minimize device round-trips.
+    // When syncSelectedToDevice/syncFavoriteToDevice are false, the device is the source of truth
+    // and the user can change profiles on the GaggiMate without Notion overwriting.
     const tasks: Promise<void>[] = [];
-    if (deviceFavorite !== notionProfile.favorite) {
+    if (this.options.syncFavoriteToDevice !== false && deviceFavorite !== notionProfile.favorite) {
       tasks.push(
         this.gaggimate.favoriteProfile(deviceId, notionProfile.favorite).catch((error) => {
           console.warn(`Profile ${notionProfile.pageId}: favorite sync failed:`, error);
         }),
       );
     }
-    if (notionProfile.selected && (options?.forceSelect || !deviceSelected)) {
+    if (
+      this.options.syncSelectedToDevice !== false &&
+      notionProfile.selected &&
+      (options?.forceSelect || !deviceSelected)
+    ) {
       tasks.push(
         this.gaggimate.selectProfile(deviceId).catch((error) => {
           console.warn(`Profile ${notionProfile.pageId}: select sync failed:`, error);

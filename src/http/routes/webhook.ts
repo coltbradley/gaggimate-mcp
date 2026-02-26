@@ -3,7 +3,6 @@ import { createHmac, timingSafeEqual } from "crypto";
 import type { GaggiMateClient } from "../../gaggimate/client.js";
 import type { NotionClient } from "../../notion/client.js";
 import { config } from "../../config.js";
-import { syncFavoriteAndSelectedFromNotion } from "../../sync/profilePreferenceSync.js";
 import { pushProfileToGaggiMate } from "../../sync/profilePush.js";
 
 type WebhookProfileAction = "push_queued" | "sync_pushed_preferences" | "ignore";
@@ -85,18 +84,13 @@ async function processWebhookEvent(
     return;
   }
 
-  // Pushed — sync favorite/selected to device.
-  // Note: Notion webhooks send internal property IDs in updated_properties (e.g. "CqzA",
-  // "{_w?"), not display names ("Favorite", "Selected"), so we cannot reliably filter by
-  // name. Preference sync is idempotent and cheap (1-2 WebSocket calls), so we always
-  // run it for Pushed profiles. The reconciler also covers this every 30s.
-  const profileId = notion.extractProfileIdFromJson(profileJson);
-  if (!profileId) {
-    console.warn(`Webhook for page ${pageId}: Pushed profile has no JSON id, cannot sync favorite/selected`);
-    return;
-  }
-
-  await syncFavoriteAndSelectedFromNotion(gaggimate, notion, pageId, profileId, { favorite, selected });
+  // Pushed — do nothing. The reconciler syncs favorite/selected every 30s and is the
+  // authoritative path for preference changes. Triggering WebSocket calls from the webhook
+  // path is unsafe: Notion often delivers queued webhook retries at container startup,
+  // landing concurrent WebSocket messages on top of the reconciler's own startup
+  // req:profiles:list. When the ESP32 drops the connection under that load, the shared
+  // WebSocket rejects ALL pending requests, putting the reconciler into a 3-minute cooldown
+  // on every restart. Letting the reconciler handle preference sync exclusively avoids this.
 }
 
 export function createWebhookRouter(gaggimate: GaggiMateClient, notion: NotionClient): Router {

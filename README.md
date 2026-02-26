@@ -15,6 +15,7 @@ Forked from [Matvey-Kuk/gaggimate-mcp](https://github.com/Matvey-Kuk/gaggimate-m
 - **Repairs stale brew data** — Hourly background scan detects brews with empty Shot JSON or missing chart images and re-syncs them
 - **Backfills brew/profile links** — Automatically links existing brews to profiles when `Activity ID` + shot metadata identifies the profile
 - **Survives firmware updates** — Shot history on the ESP32 gets wiped by OTA updates; Notion is the permanent record
+- **Device control panel** — Switch profiles and manage favorites through the bridge when the GaggiMate web portal isn't directly accessible (e.g. when remote via Tailscale)
 
 ## Architecture
 
@@ -67,6 +68,8 @@ Copy `.env.example` to `.env` and fill in your values. Never commit `.env` — i
 | `PROFILE_RECONCILE_DELETE_ENABLED` | Allow deleting Archived profiles from device | `true` |
 | `PROFILE_RECONCILE_DELETE_LIMIT_PER_RUN` | Max device deletes per reconcile cycle | `3` |
 | `PROFILE_RECONCILE_SAVE_LIMIT_PER_RUN` | Max device saves per reconcile cycle | `5` |
+| `PROFILE_SYNC_SELECTED_TO_DEVICE` | When false (default), bridge does not overwrite device selection with Notion — lets you change profiles on the GaggiMate | `false` |
+| `PROFILE_SYNC_FAVORITE_TO_DEVICE` | When false, bridge does not overwrite device favorite state with Notion | `true` |
 | `BREW_TITLE_TIMEZONE` | Timezone for brew title date/AM/PM labels | `America/Los_Angeles` |
 | `HTTP_PORT` | HTTP server port | `3000` |
 | `DATA_DIR` | Persistent data directory (sync state) | `./data` |
@@ -81,6 +84,10 @@ Copy `.env.example` to `.env` and fill in your values. Never commit `.env` — i
 
 - `GET /health` — Service status, GaggiMate/Notion connectivity, last sync info
 - `POST /webhook/notion` — Receives Notion webhooks for profile push
+- `GET /control` — **Device control panel** — switch profiles and manage favorites when the GaggiMate web portal isn't accessible (e.g. remote via Tailscale)
+- `GET /api/device/profiles` — List profiles on the device
+- `POST /api/device/profiles/:id/select` — Select a profile (make it active)
+- `POST /api/device/profiles/:id/favorite` — Set favorite state (body: `{ "favorite": true|false }`)
 
 Profile JSON validation rules: [`docs/mcp-json-validation.md`](docs/mcp-json-validation.md)
 

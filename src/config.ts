@@ -50,6 +50,11 @@ export const config = {
     profileReconcileDeleteEnabled: parseEnvBoolean(process.env.PROFILE_RECONCILE_DELETE_ENABLED, true),
     profileReconcileDeleteLimitPerRun: parseEnvNumber(process.env.PROFILE_RECONCILE_DELETE_LIMIT_PER_RUN, 3),
     profileReconcileSaveLimitPerRun: parseEnvNumber(process.env.PROFILE_RECONCILE_SAVE_LIMIT_PER_RUN, 5),
+    /** When false, the bridge does not overwrite the device's selected profile with Notion's Selected checkbox.
+     * This lets you change profiles on the GaggiMate (physical controls, web UI) without Notion reverting it. */
+    profileSyncSelectedToDevice: parseEnvBoolean(process.env.PROFILE_SYNC_SELECTED_TO_DEVICE, false),
+    /** When false, the bridge does not overwrite the device's favorite state with Notion's Favorite checkbox. */
+    profileSyncFavoriteToDevice: parseEnvBoolean(process.env.PROFILE_SYNC_FAVORITE_TO_DEVICE, true),
     recentShotLookbackCount: parseEnvNumber(process.env.RECENT_SHOT_LOOKBACK_COUNT, 5),
     brewRepairIntervalMs: parseEnvNumber(process.env.BREW_REPAIR_INTERVAL_MS, 3600000), // 1 hour
   },

@@ -4,6 +4,8 @@ import type { NotionClient } from "../notion/client.js";
 import type { SyncState } from "../sync/state.js";
 import { createHealthRouter } from "./routes/health.js";
 import { createWebhookRouter } from "./routes/webhook.js";
+import { createDeviceRouter } from "./routes/device.js";
+import { getControlPanelHtml } from "./controlPanelHtml.js";
 
 export interface ServerOptions {
   getSyncState: () => SyncState | null;
@@ -24,6 +26,11 @@ export function createServer(
 
   app.use("/health", createHealthRouter(gaggimate, notion, options.getSyncState));
   app.use("/webhook", createWebhookRouter(gaggimate, notion));
+  app.use("/api/device", createDeviceRouter(gaggimate));
+
+  app.get("/control", (_req, res) => {
+    res.type("html").send(getControlPanelHtml("/api/device"));
+  });
 
   return app;
 }

@@ -307,10 +307,13 @@ Both `reachable` and `connected` should be `true`. If not:
 - `reachable: false` → Check GaggiMate IP, make sure Docker can reach it (try `docker exec <container> curl http://192.168.1.100`)
 - `connected: false` → Check `NOTION_API_KEY` in `.env`
 
-### 2. Pull a shot
+### 2. Device control panel (when web portal isn't accessible)
+Open `http://<bridge-host>:3000/control` in a browser. Use this to switch profiles and manage favorites when you can't reach the GaggiMate's web UI directly (e.g. when remote via Tailscale). The bridge proxies requests to the device on your LAN.
+
+### 3. Pull a shot
 Pull an espresso shot on your machine. Within 30 seconds, a new entry should appear in your Notion Brews database with the title format `#001 - Feb 14 AM`.
 
-### 3. Test profile push
+### 4. Test profile push
 1. In your Notion Profiles database, create a new entry
 2. Set the **Profile JSON** to:
    ```json
@@ -320,25 +323,25 @@ Pull an espresso shot on your machine. Within 30 seconds, a new entry should app
 4. Within the next reconcile cycle (default 30s), or immediately via webhook, the status should change to `Pushed`
 5. Check the GaggiMate — the profile should appear or update on device
 
-### 4. Test device profile import (GaggiMate → Notion)
+### 5. Test device profile import (GaggiMate → Notion)
 1. Create a new profile on the GaggiMate UI
 2. Wait up to 30 seconds (default reconcile interval), or pull a shot with that profile
 3. Confirm a new page appears in the Notion Profiles DB
 4. Confirm imported profile starts with `Push Status = Draft`
 5. Confirm the brew's `Profile` relation links to that profile
 
-### 5. Test authoritative Notion reconcile
+### 6. Test authoritative Notion reconcile
 1. Edit `Profile JSON` for an existing `Pushed` profile in Notion
 2. Wait one reconcile interval
 3. Confirm profile remains edited in Notion and changes are pushed to machine (Notion wins)
 
-### 6. Test archive behavior
+### 7. Test archive behavior
 1. Set a non-utility profile `Push Status` to `Archived`
 2. Confirm it is removed from GaggiMate
 3. Confirm `Active on Machine` is unchecked
 4. Repeat with a utility profile (`flush`/`descale`) and confirm it is not deleted
 
-### 7. Test Favorite/Selected sync
+### 8. Test Favorite/Selected sync
 1. For a `Pushed` profile, toggle `Favorite` in Notion
 2. Confirm favorite state changes on GaggiMate
 3. Check `Selected` in Notion for a profile
@@ -424,6 +427,8 @@ ghcr.io/graphite-productions/gaggimate-bridge:2026-02-25
 | Docker can't resolve hostname | mDNS doesn't work in Docker | Use IP address, not `gaggimate.local` |
 | Old brews missing chart image or Shot JSON | Image was uploaded too early (blank) or shot was captured while initializing | The hourly repair scan will detect and re-sync these automatically; force sooner by restarting the service (repair runs on startup) |
 | Profile reconciler logs "3 saved/re-pushed" every cycle | Persistent field mismatch between Notion JSON and device profile | Check logs for `Profile reconciler: mismatch at ...` to identify the differing field; `targets: []` (empty array) is now automatically stripped and should not recur |
+| Control panel shows "Device offline" | Bridge can't reach GaggiMate (same as `reachable: false` in /health) | Fix GAGGIMATE_HOST, network, or Docker routing; control panel uses the bridge to talk to the device |
+| Can't change profiles on the GaggiMate — selection keeps reverting | Bridge overwrites device selection with Notion's Selected checkbox every 30s | Set `PROFILE_SYNC_SELECTED_TO_DEVICE=false` (default) so the device is the source of truth. Use the control panel or device UI to switch profiles. |
 
 ---
 
