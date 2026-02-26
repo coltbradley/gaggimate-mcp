@@ -180,6 +180,34 @@ export class GaggiMateClient {
     return connectPromise;
   }
 
+  private resetStuckConnectingSocket(reason: string): void {
+    const ws = this.sharedWs;
+    if (!ws || ws.readyState !== WebSocket.CONNECTING) {
+      return;
+    }
+
+    this.sharedWs = null;
+    this.sharedWsConnectPromise = null;
+
+    try {
+      ws.removeAllListeners();
+    } catch {
+      // best effort
+    }
+
+    try {
+      ws.terminate();
+    } catch {
+      try {
+        ws.close();
+      } catch {
+        // best effort
+      }
+    }
+
+    console.warn(`GaggiMate WS connect stalled (${reason}); resetting socket`);
+  }
+
   /**
    * Send a request over the shared WebSocket connection.
    * The connection is kept alive for WS_IDLE_TTL ms after the last response
@@ -191,6 +219,9 @@ export class GaggiMateClient {
 
       const timeoutHandle = setTimeout(() => {
         this.pendingRequests.delete(requestId);
+        if (this.pendingRequests.size === 0) {
+          this.resetStuckConnectingSocket("request timeout");
+        }
         reject(new Error(`Request timeout: No response from GaggiMate at ${this.wsUrl}`));
       }, this.config.requestTimeout);
 

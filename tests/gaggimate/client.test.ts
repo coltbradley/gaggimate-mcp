@@ -174,4 +174,53 @@ describe("GaggiMateClient WebSocket request flow", () => {
     expect(diagnosticsAfter.wsQueueDepth).toBe(0);
     expect(diagnosticsAfter.wsPendingResponses).toBe(0);
   });
+
+  it("resets a stalled connecting socket when request timeout is hit", async () => {
+    vi.useFakeTimers();
+    const client = createClient() as any;
+
+    const connectingWs = {
+      readyState: 0, // CONNECTING
+      removeAllListeners: vi.fn(),
+      terminate: vi.fn(),
+      close: vi.fn(),
+    };
+    client.sharedWs = connectingWs;
+    client.sharedWsConnectPromise = Promise.resolve(connectingWs);
+    client.getOrCreateWs = vi.fn().mockReturnValue(new Promise(() => {}));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const request = client.sendWsRequest({
+        reqType: "req:timeout",
+        resType: "res:timeout",
+        extractResult: (res: any) => res,
+        errorPrefix: "timeout failed",
+      });
+      const requestResult = request.then(
+        () => ({ ok: true } as const),
+        (error) => ({ ok: false, error } as const),
+      );
+
+      await vi.advanceTimersByTimeAsync(1001);
+
+      const result = await requestResult;
+      expect(result.ok).toBe(false);
+      if (result.ok) {
+        throw new Error("Expected timeout rejection");
+      }
+      expect(result.error).toBeInstanceOf(Error);
+      expect(result.error.message).toContain("Request timeout");
+      expect(connectingWs.removeAllListeners).toHaveBeenCalledTimes(1);
+      expect(connectingWs.terminate).toHaveBeenCalledTimes(1);
+      expect(client.sharedWs).toBeNull();
+      expect(client.sharedWsConnectPromise).toBeNull();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("GaggiMate WS connect stalled"),
+      );
+    } finally {
+      warnSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
 });
