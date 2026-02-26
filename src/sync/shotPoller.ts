@@ -29,10 +29,14 @@ export class ShotPoller {
   private state: SyncState;
   // Tracks shots confirmed fully synced (brew + chart + JSON) so lookback skips them.
   private fullySyncedShots = new Set<string>();
-  // Timestamp of the last completed repair scan (0 = never run).
+  // Timestamp anchor used by repair scheduling (0 = never run).
   private repairLastRun = 0;
   // How many past shots to scan for stale/missing data on each repair pass.
   private readonly REPAIR_WINDOW = 50;
+  // Process stale-brew repairs in small chunks so one pass cannot starve shot ingest.
+  private readonly REPAIR_BATCH_SIZE = 3;
+  // When repair work remains, schedule the next chunk quickly instead of waiting full interval.
+  private readonly REPAIR_CONTINUATION_DELAY_MS = 30_000;
 
   constructor(gaggimate: GaggiMateClient, notion: NotionClient, options: ShotPollerOptions) {
     this.gaggimate = gaggimate;
@@ -85,7 +89,6 @@ export class ShotPoller {
   private async repairStaleBrews(shots: ShotListItem[]): Promise<void> {
     const now = Date.now();
     if (this.options.repairIntervalMs <= 0 || now - this.repairLastRun < this.options.repairIntervalMs) return;
-    this.repairLastRun = now;
 
     const lastId = this.state.lastSyncedShotId ? parseInt(this.state.lastSyncedShotId, 10) : 0;
     if (lastId === 0) return;
@@ -94,15 +97,23 @@ export class ShotPoller {
     const candidates = shots
       .filter((s) => {
         const id = parseInt(s.id, 10);
-        return id >= lowerBound && id <= lastId && !s.incomplete;
+        return id >= lowerBound && id <= lastId && !s.incomplete && !this.fullySyncedShots.has(s.id);
       })
       .sort((a, b) => parseInt(a.id, 10) - parseInt(b.id, 10));
 
-    if (candidates.length === 0) return;
+    if (candidates.length === 0) {
+      this.repairLastRun = now;
+      return;
+    }
+
+    const batchCandidates = candidates.slice(0, this.REPAIR_BATCH_SIZE);
+    const hasMoreCandidates = candidates.length > batchCandidates.length;
 
     let repairedCount = 0;
+    let processedCount = 0;
 
-    for (const shotListItem of candidates) {
+    for (const shotListItem of batchCandidates) {
+      processedCount += 1;
       try {
         const existing = await this.notion.findBrewByShotId(shotListItem.id);
         if (!existing) continue;
@@ -157,6 +168,16 @@ export class ShotPoller {
       }
     }
 
+    if (hasMoreCandidates) {
+      // Keep the normal large repair interval, but fast-forward the next chunk.
+      this.repairLastRun = now - this.options.repairIntervalMs + this.REPAIR_CONTINUATION_DELAY_MS;
+      console.log(
+        `Repair scan: processed ${processedCount}/${candidates.length} shot(s); continuing in ${this.REPAIR_CONTINUATION_DELAY_MS}ms`,
+      );
+    } else {
+      this.repairLastRun = now;
+    }
+
     if (repairedCount > 0) {
       console.log(`Repair scan complete: fixed ${repairedCount} shot(s) with missing/stale data`);
     }
@@ -208,10 +229,6 @@ export class ShotPoller {
         return;
       }
 
-      // On the very first poll, scan for brews that were created with empty data
-      // (shot captured while the device was still initializing the .slog file).
-      await this.repairStaleBrews(shots);
-
       // Parse IDs once for efficient filtering and sorting
       const lastId = state.lastSyncedShotId ? parseInt(state.lastSyncedShotId, 10) : 0;
 
@@ -255,8 +272,10 @@ export class ShotPoller {
         .sort((a, b) => numId(a) - numId(b));
       candidateCount = candidateShots.length;
       newShotCount = newShots.length;
+      let connectivityInterrupted = false;
 
       if (candidateShots.length === 0) {
+        await this.repairStaleBrews(shots);
         return;
       }
       const newestCandidateId = numId(candidateShots[candidateShots.length - 1]);
@@ -448,6 +467,7 @@ export class ShotPoller {
         } catch (error) {
           if (isConnectivityError(error)) {
             this.warnConnectivityIssue(error);
+            connectivityInterrupted = true;
             break;
           }
           // Per-shot failure isolation — log and continue
@@ -459,6 +479,12 @@ export class ShotPoller {
       syncedCount = syncedIds.length;
       if (syncedIds.length > 0) {
         console.log(`Synced ${syncedIds.length} new shot(s) (IDs: ${syncedIds.join(", ")})`);
+      }
+
+      // Run stale-brew repairs after ingest work so new shots are never blocked by
+      // large repair windows. Repair itself is batched in repairStaleBrews().
+      if (!connectivityInterrupted) {
+        await this.repairStaleBrews(shots);
       }
     } catch (error) {
       // Top-level failure — GaggiMate unreachable or other fatal error

@@ -251,6 +251,7 @@ describe("ShotPoller", () => {
 
   it("repairs stale brews with empty JSON and missing chart image by re-syncing both", async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "shot-poller-test-"));
+    const callOrder: string[] = [];
 
     // Shot 2 was already synced (id <= lastSyncedShotId) but with empty JSON.
     // Shot 3 is a new shot that will be synced normally this poll.
@@ -261,23 +262,31 @@ describe("ShotPoller", () => {
         { id: "2", incomplete: false }, // previously synced — stale
         { id: "3", incomplete: false }, // new shot
       ]),
-      fetchShot: vi.fn().mockResolvedValue({ ...staleShot, id: "2" }),
+      fetchShot: vi.fn().mockImplementation((shotId: string) => {
+        if (shotId === "3") return Promise.resolve({ ...staleShot, id: "3" });
+        return Promise.resolve({ ...staleShot, id: "2" });
+      }),
       fetchProfiles: vi.fn().mockResolvedValue([{ label: "Device Profile", id: "profile-1" }]),
       uploadBrewChart: vi.fn().mockResolvedValue(true),
     };
 
     const notion = {
-      findBrewByShotId: vi.fn()
-        .mockResolvedValueOnce("existing-brew-2") // repair scan: shot 2
-        .mockResolvedValueOnce(null),             // main loop: shot 3 is new (shot 2 skipped via fullySyncedShots)
-      getBrewShotJson: vi.fn().mockResolvedValue(
-        JSON.stringify({ metadata: { sample_count: 0 } }) // stale!
-      ),
+      findBrewByShotId: vi.fn().mockImplementation((shotId: string) => {
+        if (shotId === "2") return Promise.resolve("existing-brew-2");
+        return Promise.resolve(null);
+      }),
+      getBrewShotJson: vi.fn().mockImplementation(() => {
+        callOrder.push("repair-json-read");
+        return Promise.resolve(JSON.stringify({ metadata: { sample_count: 0 } })); // stale!
+      }),
       hasProfileByName: vi.fn().mockResolvedValue(true),
       normalizeProfileName: vi.fn().mockImplementation((name: string) => name.trim().toLowerCase()),
       createDraftProfile: vi.fn(),
       uploadProfileImage: vi.fn(),
-      createBrew: vi.fn().mockResolvedValue("brew-3"),
+      createBrew: vi.fn().mockImplementation(() => {
+        callOrder.push("create-brew");
+        return Promise.resolve("brew-3");
+      }),
       updateBrewFromData: vi.fn().mockResolvedValue(undefined),
       brewHasProfileImage: vi.fn().mockResolvedValue(false),
       imageUploadDisabled: null,
@@ -290,7 +299,8 @@ describe("ShotPoller", () => {
       const poller = new ShotPoller(gaggimate as any, notion as any, {
         intervalMs: 1000,
         dataDir,
-        recentShotLookbackCount: 5,
+        // Keep lookback empty so shot 2 is handled only by repair, not the main ingest loop.
+        recentShotLookbackCount: 0,
         brewTitleTimeZone: "America/Los_Angeles",
         repairIntervalMs: 1, // runs immediately since repairLastRun starts at 0
       });
@@ -309,6 +319,55 @@ describe("ShotPoller", () => {
       );
       expect(notion.uploadBrewChart).toHaveBeenCalledWith("existing-brew-2", "2", expect.any(Object));
       expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("repaired brew"));
+      expect(callOrder).toEqual(expect.arrayContaining(["create-brew", "repair-json-read"]));
+      expect(callOrder.indexOf("create-brew")).toBeLessThan(callOrder.indexOf("repair-json-read"));
+    } finally {
+      logSpy.mockRestore();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("chunks large repair scans to avoid long single-cycle stalls", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "shot-poller-test-"));
+    const shots = Array.from({ length: 10 }, (_, idx) => ({ id: String(10 - idx), incomplete: false }));
+
+    const gaggimate = {
+      fetchShotHistory: vi.fn().mockResolvedValue(shots),
+      fetchShot: vi.fn(),
+      fetchProfiles: vi.fn(),
+      uploadBrewChart: vi.fn().mockResolvedValue(true),
+    };
+
+    const notion = {
+      findBrewByShotId: vi.fn().mockResolvedValue(null),
+      getBrewShotJson: vi.fn(),
+      hasProfileByName: vi.fn().mockResolvedValue(true),
+      normalizeProfileName: vi.fn().mockImplementation((name: string) => name.trim().toLowerCase()),
+      createDraftProfile: vi.fn(),
+      uploadProfileImage: vi.fn(),
+      createBrew: vi.fn(),
+      updateBrewFromData: vi.fn().mockResolvedValue(undefined),
+      brewHasProfileImage: vi.fn().mockResolvedValue(false),
+      imageUploadDisabled: null,
+      uploadBrewChart: vi.fn().mockResolvedValue(true),
+    };
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      const poller = new ShotPoller(gaggimate as any, notion as any, {
+        intervalMs: 1000,
+        dataDir,
+        recentShotLookbackCount: 0,
+        brewTitleTimeZone: "America/Los_Angeles",
+        repairIntervalMs: 1,
+      });
+
+      (poller as any).state.lastSyncedShotId = "10";
+      await (poller as any).poll();
+
+      expect(notion.findBrewByShotId).toHaveBeenCalledTimes(3);
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Repair scan: processed 3/10 shot(s)"));
     } finally {
       logSpy.mockRestore();
       rmSync(dataDir, { recursive: true, force: true });
