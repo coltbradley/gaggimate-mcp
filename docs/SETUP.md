@@ -96,8 +96,8 @@ If you want a single copy/paste page specifically for Notion setup and AI instru
 | Best For | Multi-select | Light Roast, Medium Roast, Dark Roast, etc. |
 | Source | Select | Stock, Community, AI-Generated, Custom |
 | Active on Machine | Checkbox | Tracking what's loaded |
-| Favorite | Checkbox | Sync target to machine favorite state for managed profiles |
-| Selected | Checkbox | When checked, bridge selects this profile on the machine |
+| Favorite | Checkbox | Sync target to machine favorite state for managed profiles (when `PROFILE_SYNC_FAVORITE_TO_DEVICE=true`) |
+| Selected | Checkbox | When checked, bridge selects this profile on the machine (when `PROFILE_SYNC_SELECTED_TO_DEVICE=true`) |
 | Profile Image | File | Screenshot/export of curve |
 | Profile JSON | Text | Raw JSON the machine reads |
 | Push Status | Select | `Draft`, `Queued`, `Pushed`, `Archived`, `Failed` |
@@ -207,6 +207,10 @@ curl -H "Authorization: Bearer ntn_YOUR_TOKEN" \
 
 Should return your user info without errors. Never share your token — use environment variables only. See [Notion API key best practices](https://developers.notion.com/guides/resources/best-practices-for-handling-api-keys).
 
+Note about file/image uploads:
+- The bridge writes files to `Brew Profile` and `Profile Image` properties.
+- If your integration is missing file-upload capability, shot/profile sync still works but image uploads are automatically disabled for that process and reported in `/health`.
+
 ---
 
 ## Step 4: Configure Environment
@@ -227,6 +231,7 @@ REQUEST_TIMEOUT=5000
 NOTION_API_KEY=ntn_XXXXXXXXXXXX
 
 # Database IDs from Step 3
+# NOTION_BEANS_DB_ID is optional (bean queries fail if omitted)
 NOTION_BEANS_DB_ID=abc123...
 NOTION_BREWS_DB_ID=def456...
 NOTION_PROFILES_DB_ID=ghi789...
@@ -249,8 +254,18 @@ RECENT_SHOT_LOOKBACK_COUNT=5
 # How often to scan for brews with stale JSON or missing chart images (ms, default 1 hour)
 BREW_REPAIR_INTERVAL_MS=3600000
 HTTP_PORT=3000
+DATA_DIR=./data
 BREW_TITLE_TIMEZONE=America/Los_Angeles
 ```
+
+Deprecated and ignored env vars (remove if present):
+- `POLLING_FALLBACK`
+- `PROFILE_POLL_INTERVAL_MS`
+
+Recommended baseline for reliability-first operation:
+- Keep `PROFILE_SYNC_SELECTED_TO_DEVICE=false` so device-side profile selection is not overwritten by Notion.
+- Keep `PROFILE_SYNC_FAVORITE_TO_DEVICE=false` unless you explicitly want Notion favorites to control the machine.
+- Keep `IMPORT_MISSING_PROFILES_FROM_SHOTS=false` unless you need immediate profile auto-import during shot sync.
 
 ---
 
@@ -298,6 +313,8 @@ Expected response:
 ```json
 {
   "status": "ok",
+  "version": "2026-02-26 16:11 UTC",
+  "commit": "fc8c845",
   "gaggimate": {
     "host": "192.168.1.100",
     "reachable": true,
@@ -316,10 +333,16 @@ Both `reachable` and `connected` should be `true`. If not:
 - `reachable: false` → Check GaggiMate IP, make sure Docker can reach it (try `docker exec <container> curl http://192.168.1.100`)
 - `connected: false` → Check `NOTION_API_KEY` in `.env`
 - `signatureVerificationEnabled: false` while using public webhooks → Set `WEBHOOK_SECRET` and restart the service
+- `notion.imageUploadDisabled` present (for example `notion-file-upload-auth-failed`) → Notion file uploads are disabled for this process; verify integration capabilities and restart
 - `wsQueueDepth` stays high (for example > 10) → too many overlapping profile actions/webhooks; check Notion automation loops and reduce profile churn
 
 ### 2. Device control panel (when web portal isn't accessible)
 Open `http://<bridge-host>:3000/control` in a browser. Use this to switch profiles and manage favorites when you can't reach the GaggiMate's web UI directly (e.g. when remote via Tailscale). The bridge proxies requests to the device on your LAN.
+
+The control panel reports profile source:
+- `device`: live device profile list
+- `device+notion`: device list plus Notion-only IDs
+- `notion-fallback`: device offline; read-only fallback list (actions disabled)
 
 ### 3. Pull a shot
 Pull an espresso shot on your machine. Within 30 seconds, a new entry should appear in your Notion Brews database with the title format `#001 - Feb 14 AM`.
@@ -387,6 +410,8 @@ This gives you a public URL like `https://your-machine.tail12345.ts.net`.
    ```
    WEBHOOK_SECRET=your_webhook_verification_token_here
    ```
+   - Copy this token directly from Notion webhook settings.
+   - The bridge intentionally does not print the token value in logs.
    - Use the raw verification token value from Notion settings, not the `x-notion-signature` header (`sha256=...`).
    - If set, webhook signatures are verified.
    - If unset, webhook events are accepted unsigned (safest only on trusted/private networks).
@@ -441,6 +466,8 @@ ghcr.io/graphite-productions/gaggimate-bridge:2026-02-25
 | Brew title AM/PM appears wrong | Container timezone differs from your local timezone | Set `BREW_TITLE_TIMEZONE` (e.g. `America/Los_Angeles`) and restart |
 | Frequent timeout warnings | GaggiMate slow/unreachable or timeout too low | Verify connectivity and increase `REQUEST_TIMEOUT` (e.g. `10000`) |
 | Docker can't resolve hostname | mDNS doesn't work in Docker | Use IP address, not `gaggimate.local` |
+| `Webhook signature mismatch — rejecting` appears repeatedly | `WEBHOOK_SECRET` is wrong (often set to `sha256=...` header value instead of raw token) | Set `WEBHOOK_SECRET` to Notion's raw webhook verification token and restart |
+| Startup warns `Deprecated env var ... is set and ignored` | Old variables are still in `.env` | Remove `POLLING_FALLBACK` and `PROFILE_POLL_INTERVAL_MS` |
 | Old brews missing chart image or Shot JSON | Image was uploaded too early (blank) or shot was captured while initializing | The hourly repair scan will detect and re-sync these automatically; force sooner by restarting the service (repair runs on startup) |
 | Profile reconciler logs "3 saved/re-pushed" every cycle | Persistent field mismatch between Notion JSON and device profile | Check logs for `Profile reconciler: mismatch at ...` to identify the differing field; `targets: []` (empty array) is now automatically stripped and should not recur |
 | Control panel shows "Device offline" | Bridge can't reach GaggiMate (same as `reachable: false` in /health) | Fix GAGGIMATE_HOST, network, or Docker routing; control panel uses the bridge to talk to the device |

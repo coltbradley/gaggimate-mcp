@@ -2,6 +2,8 @@
 
 Use this as a single source of truth for your Notion workspace. You can paste this document into a Notion page as-is.
 
+For deployment steps (Docker/TrueNAS, environment variables, health checks), use `docs/SETUP.md`.
+
 ## 1. How to Create the Databases
 
 Create three databases in Notion:
@@ -67,8 +69,8 @@ The database titles can vary, but property names and types below should match ex
 | Best For | Multi-select | No | roast/use tags |
 | Source | Select | No | Stock, Community, AI-Generated, Custom |
 | Active on Machine | Checkbox | Yes | bridge-maintained state |
-| Favorite | Checkbox | Yes | sync target for favorite state |
-| Selected | Checkbox | Yes | sync target for selected profile |
+| Favorite | Checkbox | Yes | sync target for favorite state (`PROFILE_SYNC_FAVORITE_TO_DEVICE=true`) |
+| Selected | Checkbox | Yes | sync target for selected profile (`PROFILE_SYNC_SELECTED_TO_DEVICE=true`, select-on-check behavior) |
 | Profile Image | Files | No | chart image |
 | Profile JSON | Text | Yes | canonical machine profile JSON |
 | Push Status | Select | Yes | `Draft`, `Queued`, `Pushed`, `Archived`, `Failed` |
@@ -131,6 +133,7 @@ User/AI-managed fields in `Profiles`:
 - Device-only profiles can be imported as `Draft` when import flags are enabled (`PROFILE_IMPORT_UNMATCHED_DEVICE_PROFILES` and/or `IMPORT_MISSING_PROFILES_FROM_SHOTS`).
 - Webhook updates for `Queued` push immediately.
 - Webhook updates for `Pushed` apply `Favorite`/`Selected` only when `PROFILE_SYNC_FAVORITE_TO_DEVICE` / `PROFILE_SYNC_SELECTED_TO_DEVICE` are enabled.
+- `Selected` behavior is "select when checked"; unchecking does not send a deselect command.
 - Archived non-utility profiles are deleted from device.
 - Destructive delete behavior can be disabled with `PROFILE_RECONCILE_DELETE_ENABLED=false`.
 - Deletes are rate-limited per cycle by `PROFILE_RECONCILE_DELETE_LIMIT_PER_RUN` (default `3`) as a safety guard.
@@ -167,6 +170,7 @@ Do not:
 - overwrite unrelated properties
 - clear JSON id on an existing profile
 - set multiple managed rows to the same JSON id
+- repeatedly toggle `Push Status` between states in automation loops
 ```
 
 ### AI Agent Quick Workflow
@@ -176,3 +180,15 @@ Do not:
 3. Ensure name/label consistency.
 4. Set `Push Status = Queued`.
 5. Confirm bridge moves it to `Pushed`.
+
+## 4. Operational Flags and Webhook Security
+
+These `.env` flags control how Notion changes affect the machine:
+- `PROFILE_SYNC_SELECTED_TO_DEVICE=false` (default): device/profile UI controls selection; Notion does not override.
+- `PROFILE_SYNC_FAVORITE_TO_DEVICE=false` (default): Notion favorites do not override machine favorites.
+- `PROFILE_IMPORT_UNMATCHED_DEVICE_PROFILES=false` (default): no periodic import of device-only profiles.
+- `IMPORT_MISSING_PROFILES_FROM_SHOTS=false` (default): shot sync does not fetch profiles for inline import.
+
+Webhook security:
+- Set `WEBHOOK_SECRET` to Notion's raw webhook verification token.
+- Do not use the `x-notion-signature` value (`sha256=...`) as `WEBHOOK_SECRET`.

@@ -17,17 +17,26 @@
 #   NOTION_API_KEY        - Notion integration token (starts with ntn_)
 #   NOTION_BREWS_DB_ID    - Notion Brews database ID
 #   NOTION_PROFILES_DB_ID - Notion Profiles database ID
-#   NOTION_BEANS_DB_ID    - Notion Beans database ID
+#   NOTION_BEANS_DB_ID    - Notion Beans database ID (optional; bean queries fail if omitted)
 #
 # Optional:
 #   GAGGIMATE_PROTOCOL    - ws (default) or wss
-#   WEBHOOK_SECRET        - Notion webhook secret
+#   REQUEST_TIMEOUT       - device HTTP/WS request timeout in ms (default: 5000)
+#   WEBHOOK_SECRET        - Notion webhook verification token (raw token, not sha256 signature)
 #   SYNC_INTERVAL_MS      - Shot polling interval in ms (default: 30000)
+#   PROFILE_RECONCILE_DELETE_ENABLED - true (default) or false
+#   PROFILE_RECONCILE_DELETE_LIMIT_PER_RUN - max deletes/cycle (default: 3)
+#   PROFILE_RECONCILE_SAVE_LIMIT_PER_RUN - max saves/cycle (default: 5)
 #   BREW_REPAIR_INTERVAL_MS - Stale brew repair interval in ms (default: 3600000)
 #   PROFILE_RECONCILE_ENABLED - true (default) or false
 #   PROFILE_RECONCILE_INTERVAL_MS - profile reconcile interval in ms (default: 60000)
+#   PROFILE_SYNC_SELECTED_TO_DEVICE - false by default (do not override device selection)
+#   PROFILE_SYNC_FAVORITE_TO_DEVICE - false by default (do not override favorites)
+#   PROFILE_IMPORT_UNMATCHED_DEVICE_PROFILES - false by default
+#   IMPORT_MISSING_PROFILES_FROM_SHOTS - false by default
 #   RECENT_SHOT_LOOKBACK_COUNT - Recent shot rows to re-hydrate each poll (default: 5)
 #   BREW_TITLE_TIMEZONE   - Timezone for brew title AM/PM labels (e.g. America/Los_Angeles)
+#   DATA_DIR              - Persistent sync-state path inside container (default: ./data)
 
 services:
   gaggimate-bridge:
