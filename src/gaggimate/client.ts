@@ -53,6 +53,8 @@ export class GaggiMateClient {
   private sharedWsIdleTimer: NodeJS.Timeout | null = null;
   private pendingRequests = new Map<string, PendingRequest>();
   private readonly WS_IDLE_TTL = 8000;
+  // Serializes request/response cycles to keep ESP32 WebSocket load predictable.
+  private wsRequestQueue: Promise<void> = Promise.resolve();
 
   constructor(config: GaggiMateConfig) {
     this.config = config;
@@ -180,7 +182,7 @@ export class GaggiMateClient {
    * to amortise TCP + handshake cost across sequential calls.
    */
   private sendWsRequest<T>(options: WsRequestOptions): Promise<T> {
-    return new Promise((resolve, reject) => {
+    const runRequest = () => new Promise<T>((resolve, reject) => {
       const requestId = generateRequestId();
 
       const timeoutHandle = setTimeout(() => {
@@ -198,13 +200,32 @@ export class GaggiMateClient {
       });
 
       this.getOrCreateWs().then((ws) => {
-        ws.send(JSON.stringify({ tp: options.reqType, rid: requestId, ...options.payload }));
+        const payload = JSON.stringify({ tp: options.reqType, rid: requestId, ...options.payload });
+        try {
+          ws.send(payload, (sendError) => {
+            if (!sendError) {
+              return;
+            }
+            this.pendingRequests.delete(requestId);
+            clearTimeout(timeoutHandle);
+            reject(new Error(`WebSocket send failed: ${sendError.message}`));
+          });
+        } catch (sendError: any) {
+          this.pendingRequests.delete(requestId);
+          clearTimeout(timeoutHandle);
+          reject(new Error(`WebSocket send failed: ${sendError?.message || "unknown error"}`));
+        }
       }).catch((err) => {
         this.pendingRequests.delete(requestId);
         clearTimeout(timeoutHandle);
         reject(err);
       });
     });
+
+    // Chain each request to ensure only one in-flight WS round-trip at a time.
+    const chained = this.wsRequestQueue.catch(() => undefined).then(runRequest);
+    this.wsRequestQueue = chained.then(() => undefined, () => undefined);
+    return chained;
   }
 
   /** Check if GaggiMate is reachable via HTTP */
