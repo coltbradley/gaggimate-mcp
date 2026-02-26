@@ -153,6 +153,42 @@ describe("NotionClient profile helpers", () => {
     expect(existing.byId.has("archived-id")).toBe(false);
   });
 
+  it("deduplicates concurrent listExistingProfiles calls into one DB scan", async () => {
+    const { notion, mockClient } = createNotionClient();
+    const deferred = createDeferred<any>();
+    mockClient.databases.query.mockImplementation(() => deferred.promise);
+
+    const first = notion.listExistingProfiles();
+    const second = notion.listExistingProfiles();
+
+    expect(mockClient.databases.query).toHaveBeenCalledTimes(1);
+
+    deferred.resolve({
+      results: [
+        {
+          id: "p1",
+          properties: {
+            "Profile Name": titleProperty("Concurrent Profile"),
+            "Profile JSON": richTextProperty("{\"id\":\"concurrent-id\"}"),
+            "Push Status": { type: "select", select: { name: "Pushed" } },
+            "Active on Machine": { type: "checkbox", checkbox: true },
+            "Profile Image": { type: "files", files: [] },
+            Source: { type: "select", select: { name: "Custom" } },
+            Favorite: { type: "checkbox", checkbox: false },
+            Selected: { type: "checkbox", checkbox: false },
+          },
+        },
+      ],
+      has_more: false,
+      next_cursor: null,
+    });
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(firstResult.byId.get("concurrent-id")?.pageId).toBe("p1");
+    expect(secondResult.byId.get("concurrent-id")?.pageId).toBe("p1");
+    expect(mockClient.databases.query).toHaveBeenCalledTimes(1);
+  });
+
   it("getProfilePageIdByName scans paginated results for normalized name matches", async () => {
     const { notion, mockClient } = createNotionClient();
     mockClient.databases.query

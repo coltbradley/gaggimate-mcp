@@ -37,6 +37,8 @@ export class NotionClient {
   private brewPageIdCache = new Map<string, { pageId: string | null; expiresAt: number }>();
   // Deduplicate concurrent findBrewByShotId lookups for the same shot ID.
   private brewPageIdLookupInFlight = new Map<string, Promise<string | null>>();
+  // Deduplicate concurrent full-profile-index scans (reconciler + device fallback).
+  private existingProfilesIndexInFlight: Promise<ExistingProfilesIndex> | null = null;
   // Throttle noisy missing-profile warnings when Notion profiles do not include machine labels.
   private profileMissingWarnUntil = new Map<string, number>();
   private readonly PROFILE_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -553,6 +555,11 @@ export class NotionClient {
   }
 
   async listExistingProfiles(): Promise<ExistingProfilesIndex> {
+    if (this.existingProfilesIndexInFlight) {
+      return this.existingProfilesIndexInFlight;
+    }
+
+    const loadPromise = (async (): Promise<ExistingProfilesIndex> => {
     const byName = new Map<string, ExistingProfileRecord>();
     const byId = new Map<string, ExistingProfileRecord>();
     const all: ExistingProfileRecord[] = [];
@@ -617,7 +624,13 @@ export class NotionClient {
       }
     }
 
-    return { byName, byId, all };
+      return { byName, byId, all };
+    })().finally(() => {
+      this.existingProfilesIndexInFlight = null;
+    });
+
+    this.existingProfilesIndexInFlight = loadPromise;
+    return loadPromise;
   }
 
   private extractBrewActivityId(page: any): string | null {
