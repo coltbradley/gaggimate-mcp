@@ -84,7 +84,7 @@ Copy `.env.example` to `.env` and fill in your values. Never commit `.env` — i
 
 ## API
 
-- `GET /health` — Service status, GaggiMate/Notion connectivity, last sync info, webhook signature verification state
+- `GET /health` — Service status, GaggiMate/Notion connectivity, WS queue diagnostics, last sync info, webhook signature verification state
 - `POST /webhook/notion` — Receives Notion webhooks for profile push
 - `GET /control` — **Device control panel** — switch profiles and manage favorites when the GaggiMate web portal isn't accessible (e.g. remote via Tailscale)
 - `GET /api/device/profiles` — List profiles on the device

@@ -298,7 +298,11 @@ Expected response:
 ```json
 {
   "status": "ok",
-  "gaggimate": { "host": "192.168.1.100", "reachable": true },
+  "gaggimate": {
+    "host": "192.168.1.100",
+    "reachable": true,
+    "websocket": { "wsQueueDepth": 0, "wsPendingResponses": 0, "wsState": "none" }
+  },
   "notion": { "connected": true },
   "webhook": { "signatureVerificationEnabled": false },
   "lastShotSync": null,
@@ -312,6 +316,7 @@ Both `reachable` and `connected` should be `true`. If not:
 - `reachable: false` → Check GaggiMate IP, make sure Docker can reach it (try `docker exec <container> curl http://192.168.1.100`)
 - `connected: false` → Check `NOTION_API_KEY` in `.env`
 - `signatureVerificationEnabled: false` while using public webhooks → Set `WEBHOOK_SECRET` and restart the service
+- `wsQueueDepth` stays high (for example > 10) → too many overlapping profile actions/webhooks; check Notion automation loops and reduce profile churn
 
 ### 2. Device control panel (when web portal isn't accessible)
 Open `http://<bridge-host>:3000/control` in a browser. Use this to switch profiles and manage favorites when you can't reach the GaggiMate's web UI directly (e.g. when remote via Tailscale). The bridge proxies requests to the device on your LAN.
