@@ -80,7 +80,7 @@ describe("webhook route status handling", () => {
     expect(resolveWebhookProfileAction(null)).toBe("ignore");
   });
 
-  it("syncs favorite and selected in background for Pushed profiles", async () => {
+  it("syncs favorite in background for Pushed profiles", async () => {
     const gaggimate = createMockGaggimate();
     const notion = createMockNotion();
     notion.getProfilePageData.mockResolvedValue({
@@ -109,8 +109,41 @@ describe("webhook route status handling", () => {
     await vi.waitFor(() => {
       expect(gaggimate.favoriteProfile).toHaveBeenCalledWith("device-123", true);
     });
-    expect(gaggimate.selectProfile).toHaveBeenCalledWith("device-123");
+    expect(gaggimate.selectProfile).not.toHaveBeenCalled();
     expect(gaggimate.saveProfile).not.toHaveBeenCalled();
+  });
+
+  it("syncs selected when PROFILE_SYNC_SELECTED_TO_DEVICE is enabled", async () => {
+    const originalSyncSelected = config.sync.profileSyncSelectedToDevice;
+    (config as any).sync.profileSyncSelectedToDevice = true;
+    try {
+      const gaggimate = createMockGaggimate();
+      const notion = createMockNotion();
+      notion.getProfilePageData.mockResolvedValue({
+        profileJson: JSON.stringify({ id: "device-select", label: "Profile" }),
+        pushStatus: "Pushed",
+        favorite: true,
+        selected: true,
+      });
+      notion.extractProfileIdFromJson.mockReturnValue("device-select");
+
+      const router = createWebhookRouter(gaggimate as any, notion as any);
+      const handler = getNotionWebhookHandler(router);
+      const req = createSignedRequest({
+        type: "page.properties_updated",
+        entity: { type: "page", id: "page-select" },
+      });
+      const res = createResponse();
+
+      await handler(req, res);
+      expect(res.jsonBody).toEqual({ ok: true, action: "accepted" });
+
+      await vi.waitFor(() => {
+        expect(gaggimate.selectProfile).toHaveBeenCalledWith("device-select");
+      });
+    } finally {
+      (config as any).sync.profileSyncSelectedToDevice = originalSyncSelected;
+    }
   });
 
   it("syncs preferences for Pushed profiles even when updated_properties contains only property IDs", async () => {
@@ -145,6 +178,7 @@ describe("webhook route status handling", () => {
     await vi.waitFor(() => {
       expect(gaggimate.favoriteProfile).toHaveBeenCalledWith("device-456", false);
     });
+    expect(gaggimate.selectProfile).not.toHaveBeenCalled();
     expect(gaggimate.saveProfile).not.toHaveBeenCalled();
   });
 
