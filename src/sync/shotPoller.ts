@@ -189,6 +189,13 @@ export class ShotPoller {
     if (Date.now() < this.connectivityCooldownUntil) {
       return;
     }
+    const pollStartedAt = Date.now();
+    let candidateCount = 0;
+    let newShotCount = 0;
+    let syncedCount = 0;
+    let failedCount = 0;
+    let skippedIncompleteCount = 0;
+    let skippedFullySyncedCount = 0;
     this.running = true;
 
     try {
@@ -246,6 +253,8 @@ export class ShotPoller {
       }
       const candidateShots = Array.from(candidateById.values())
         .sort((a, b) => numId(a) - numId(b));
+      candidateCount = candidateShots.length;
+      newShotCount = newShots.length;
 
       if (candidateShots.length === 0) {
         return;
@@ -291,6 +300,7 @@ export class ShotPoller {
           // Skip lookback shots already confirmed fully synced — avoids ~6 API calls per shot
           // per poll once there's nothing left to do.
           if (!isNewShot && this.fullySyncedShots.has(shotListItem.id)) {
+            skippedFullySyncedCount += 1;
             continue;
           }
 
@@ -308,6 +318,7 @@ export class ShotPoller {
             // If a non-newest shot stays incomplete forever (e.g. aborted write), don't
             // block newer completed shots behind it.
             console.warn(`Shot ${shotListItem.id}: stale incomplete index entry, skipping`);
+            skippedIncompleteCount += 1;
             skippedButBlockedByGap.add(numId(shotListItem));
             tryAdvanceContiguousCursor();
             continue;
@@ -333,6 +344,7 @@ export class ShotPoller {
               break;
             }
             console.warn(`Shot ${shotListItem.id}: stale incomplete shot file, skipping`);
+            skippedIncompleteCount += 1;
             skippedButBlockedByGap.add(numId(shotListItem));
             tryAdvanceContiguousCursor();
             continue;
@@ -440,9 +452,11 @@ export class ShotPoller {
           }
           // Per-shot failure isolation — log and continue
           console.error(`Shot ${shotListItem.id}: sync failed:`, error);
+          failedCount += 1;
         }
       }
 
+      syncedCount = syncedIds.length;
       if (syncedIds.length > 0) {
         console.log(`Synced ${syncedIds.length} new shot(s) (IDs: ${syncedIds.join(", ")})`);
       }
@@ -454,6 +468,21 @@ export class ShotPoller {
         console.error("Shot poller error:", error);
       }
     } finally {
+      if (
+        candidateCount > 0 ||
+        newShotCount > 0 ||
+        syncedCount > 0 ||
+        failedCount > 0 ||
+        skippedIncompleteCount > 0 ||
+        skippedFullySyncedCount > 0
+      ) {
+        const durationMs = Date.now() - pollStartedAt;
+        console.log(
+          `Shot poller: cycle summary candidates=${candidateCount} new=${newShotCount} synced=${syncedCount} ` +
+            `failed=${failedCount} skippedIncomplete=${skippedIncompleteCount} skippedLookback=${skippedFullySyncedCount} ` +
+            `durationMs=${durationMs}`,
+        );
+      }
       this.running = false;
     }
   }

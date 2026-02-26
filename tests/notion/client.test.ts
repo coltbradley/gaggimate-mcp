@@ -39,6 +39,14 @@ function richTextProperty(value: string) {
   };
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 describe("NotionClient profile helpers", () => {
   it("normalizeProfileName repairs mojibake profile labels", () => {
     const { notion } = createNotionClient();
@@ -248,5 +256,38 @@ describe("NotionClient profile helpers", () => {
     } finally {
       warnSpy.mockRestore();
     }
+  });
+
+  it("deduplicates concurrent lookups for the same missing profile name", async () => {
+    const { notion, mockClient } = createNotionClient();
+    const exactDeferred = createDeferred<any>();
+    mockClient.databases.query.mockImplementation(() => {
+      const callCount = mockClient.databases.query.mock.calls.length;
+      if (callCount === 1) {
+        return exactDeferred.promise;
+      }
+      return Promise.resolve({
+        results: [],
+        has_more: false,
+        next_cursor: null,
+      });
+    });
+
+    const first = notion.getProfilePageIdByName("Concurrent Missing");
+    const second = notion.getProfilePageIdByName("Concurrent Missing");
+
+    expect(mockClient.databases.query).toHaveBeenCalledTimes(1);
+
+    exactDeferred.resolve({
+      results: [],
+      has_more: false,
+      next_cursor: null,
+    });
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(firstResult).toBeNull();
+    expect(secondResult).toBeNull();
+    // One exact-match query + one fallback scan total, despite two callers.
+    expect(mockClient.databases.query).toHaveBeenCalledTimes(2);
   });
 });

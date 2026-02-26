@@ -57,6 +57,11 @@ export class ProfileReconciler {
   private async reconcile(): Promise<void> {
     if (this.running) return;
     if (Date.now() < this.connectivityCooldownUntil) return;
+    const cycleStartedAt = Date.now();
+    let processedNotionProfiles = 0;
+    let importedThisRun = 0;
+    let backfillScanned = 0;
+    let backfillLinked = 0;
     this.running = true;
     this.deletedThisRun = 0;
     this.deleteLimitWarned = false;
@@ -114,6 +119,7 @@ export class ProfileReconciler {
       const warnedConflictingIds = new Set<string>();
 
       for (const notionProfile of notionIndex.all) {
+        processedNotionProfiles += 1;
         if (notionProfile.profileId) {
           matchedDeviceIds.add(notionProfile.profileId);
         }
@@ -177,6 +183,7 @@ export class ProfileReconciler {
             knownNotionNames.add(normalizedName);
 
             await this.notion.uploadProfileImage(pageId, profileName, deviceProfile, JSON.stringify(deviceProfile));
+            importedThisRun += 1;
             console.log(`Profile reconciler: imported device profile "${profileName}" as Draft`);
           } catch (error) {
             console.error(`Profile reconciler: failed to import profile "${profileName}" as Draft:`, error);
@@ -193,18 +200,26 @@ export class ProfileReconciler {
         }
       }
       const backfillResult = await this.backfillBrewProfileRelations(profileNameToPageId);
+      backfillScanned = backfillResult.scanned;
+      backfillLinked = backfillResult.linked;
       if (backfillResult.linked > 0) {
         console.log(
           `Profile reconciler: linked ${backfillResult.linked} brew(s) to profiles (scanned ${backfillResult.scanned})`,
         );
       }
 
-      // Log a brief cycle summary so it is easy to confirm the reconciler is working.
-      if (this.savedThisRun > 0 || this.deletedThisRun > 0) {
-        const parts: string[] = [];
-        if (this.savedThisRun > 0) parts.push(`${this.savedThisRun} saved/re-pushed`);
-        if (this.deletedThisRun > 0) parts.push(`${this.deletedThisRun} deleted`);
-        console.log(`Profile reconciler: cycle complete — ${parts.join(", ")}`);
+      const durationMs = Date.now() - cycleStartedAt;
+      if (
+        this.savedThisRun > 0 ||
+        this.deletedThisRun > 0 ||
+        importedThisRun > 0 ||
+        backfillLinked > 0
+      ) {
+        console.log(
+          `Profile reconciler: cycle summary processed=${processedNotionProfiles} saved=${this.savedThisRun} ` +
+            `deleted=${this.deletedThisRun} imported=${importedThisRun} linked=${backfillLinked} ` +
+            `scanned=${backfillScanned} durationMs=${durationMs}`,
+        );
       }
     } catch (error) {
       const isRateLimit =
