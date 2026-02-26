@@ -185,14 +185,15 @@ export function getControlPanelHtml(apiBasePath: string): string {
           throw new Error(data.detail || data.error || 'Request failed');
         }
         const data = await res.json();
-        setStatus(true);
+        const deviceOnline = data.source !== 'notion-fallback';
+        setStatus(deviceOnline);
         if (data.source) {
           sourceNoteEl.textContent = 'Profile source: ' + data.source;
         }
         if (data.warning) {
           showError(data.warning);
         }
-        renderProfiles(data.profiles || []);
+        renderProfiles(data.profiles || [], deviceOnline);
       } catch (err) {
         setStatus(false);
         showError(err.message || 'Could not reach device');
@@ -203,9 +204,9 @@ export function getControlPanelHtml(apiBasePath: string): string {
       }
     }
 
-    function renderProfiles(profiles) {
+    function renderProfiles(profiles, deviceOnline) {
       if (!profiles.length) {
-        profilesEl.innerHTML = '<li class="empty">No profiles on device</li>';
+        profilesEl.innerHTML = '<li class="empty">' + (deviceOnline ? 'No profiles on device' : 'No cached profiles available') + '</li>';
         return;
       }
       profilesEl.innerHTML = profiles.map(p => {
@@ -213,12 +214,12 @@ export function getControlPanelHtml(apiBasePath: string): string {
         const favClass = p.favorite ? 'favorited' : '';
         const favChar = p.favorite ? '★' : '☆';
         const profileId = (typeof p.id === 'string' && p.id.trim()) ? p.id : '';
-        const actions = profileId
+        const actions = (deviceOnline && profileId)
           ? (
             '<button class="favorite-btn ' + favClass + '" data-id="' + escapeHtml(profileId) + '" data-fav="' + p.favorite + '" title="Toggle favorite">' + favChar + '</button>' +
             '<button class="select-btn" data-id="' + escapeHtml(profileId) + '">Select</button>'
           )
-          : '<span class="unavailable">No ID</span>';
+          : '<span class="unavailable">' + (deviceOnline ? 'No ID' : 'Offline') + '</span>';
         return '<li class="profile' + selected + '" data-id="' + escapeHtml(p.id) + '">' +
           '<span class="profile-name">' + escapeHtml(p.label || p.id || 'Unnamed') + '</span>' +
           '<div class="profile-actions">' +
