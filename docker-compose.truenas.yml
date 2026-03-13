@@ -6,7 +6,7 @@
 # UPDATING: Every push to main automatically publishes a new :latest image.
 # To update, run in the TrueNAS shell (or Apps → Shell):
 #
-#   docker pull ghcr.io/graphite-productions/gaggimate-bridge:latest
+#   docker pull ghcr.io/coltbradley/gaggimate-bridge:latest
 #   docker restart gaggimate-bridge
 #
 # The startup log will print the version (build date + short commit hash).
@@ -27,7 +27,7 @@
 
 services:
   gaggimate-bridge:
-    image: ghcr.io/graphite-productions/gaggimate-bridge:latest
+    image: ghcr.io/coltbradley/gaggimate-bridge:latest
     restart: unless-stopped
     ports:
       - "3000:3000"

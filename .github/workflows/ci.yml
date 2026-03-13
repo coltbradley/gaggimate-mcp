@@ -44,7 +44,7 @@ jobs:
       packages: write
 
     env:
-      IMAGE_NAME: ghcr.io/graphite-productions/gaggimate-bridge
+      IMAGE_NAME: ghcr.io/coltbradley/gaggimate-bridge
 
     steps:
       - uses: actions/checkout@v4
