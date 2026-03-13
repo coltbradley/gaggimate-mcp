@@ -8,43 +8,9 @@ function parseEnvNumber(value: string | undefined, defaultValue: number): number
   return Number.isFinite(parsed) ? parsed : defaultValue;
 }
 
-function parseEnvBoolean(value: string | undefined, defaultValue: boolean): boolean {
-  if (value === undefined) {
-    return defaultValue;
-  }
-
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on") {
-    return true;
-  }
-  if (normalized === "false" || normalized === "0" || normalized === "no" || normalized === "off") {
-    return false;
-  }
-  return defaultValue;
-}
-
 function parseGaggimateProtocol(value: string | undefined): "ws" | "wss" {
   const normalized = value?.trim().toLowerCase();
   return normalized === "wss" ? "wss" : "ws";
-}
-
-function parseOptionalSecret(value: string | undefined): string {
-  if (value === undefined) {
-    return "";
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return "";
-  }
-
-  const wrappedInSingleQuotes = trimmed.startsWith("'") && trimmed.endsWith("'");
-  const wrappedInDoubleQuotes = trimmed.startsWith("\"") && trimmed.endsWith("\"");
-  if (trimmed.length >= 2 && (wrappedInSingleQuotes || wrappedInDoubleQuotes)) {
-    return trimmed.slice(1, -1).trim();
-  }
-
-  return trimmed;
 }
 
 export const config = {
@@ -53,42 +19,20 @@ export const config = {
     protocol: parseGaggimateProtocol(process.env.GAGGIMATE_PROTOCOL),
     requestTimeout: parseEnvNumber(process.env.REQUEST_TIMEOUT, 5000),
   },
-  notion: {
-    apiKey: process.env.NOTION_API_KEY || "",
-    beansDbId: process.env.NOTION_BEANS_DB_ID || "",
-    brewsDbId: process.env.NOTION_BREWS_DB_ID || "",
-    profilesDbId: process.env.NOTION_PROFILES_DB_ID || "",
-  },
-  webhook: {
-    secret: parseOptionalSecret(process.env.WEBHOOK_SECRET),
+  api: {
+    token: process.env.API_TOKEN || "",
   },
   sync: {
     intervalMs: parseEnvNumber(process.env.SYNC_INTERVAL_MS, 30000),
-    profileReconcileEnabled: parseEnvBoolean(process.env.PROFILE_RECONCILE_ENABLED, true),
-    profileReconcileIntervalMs: parseEnvNumber(process.env.PROFILE_RECONCILE_INTERVAL_MS, 60000),
-    profileReconcileDeleteEnabled: parseEnvBoolean(process.env.PROFILE_RECONCILE_DELETE_ENABLED, true),
-    profileReconcileDeleteLimitPerRun: parseEnvNumber(process.env.PROFILE_RECONCILE_DELETE_LIMIT_PER_RUN, 3),
-    profileReconcileSaveLimitPerRun: parseEnvNumber(process.env.PROFILE_RECONCILE_SAVE_LIMIT_PER_RUN, 5),
-    /** When false, the bridge does not overwrite the device's selected profile with Notion's Selected checkbox.
-     * This lets you change profiles on the GaggiMate (physical controls, web UI) without Notion reverting it. */
-    profileSyncSelectedToDevice: parseEnvBoolean(process.env.PROFILE_SYNC_SELECTED_TO_DEVICE, false),
-    /** When false, the bridge does not overwrite the device's favorite state with Notion's Favorite checkbox. */
-    profileSyncFavoriteToDevice: parseEnvBoolean(process.env.PROFILE_SYNC_FAVORITE_TO_DEVICE, false),
-    // When false, reconciler skips Draft imports of device-only profiles to reduce WS list load.
-    profileImportUnmatchedDeviceProfiles: parseEnvBoolean(process.env.PROFILE_IMPORT_UNMATCHED_DEVICE_PROFILES, false),
-    // When false, shot polling never calls the device profile WebSocket APIs.
-    // This keeps shot ingest prioritized and avoids profile-list fetch load.
-    importMissingProfilesFromShots: parseEnvBoolean(process.env.IMPORT_MISSING_PROFILES_FROM_SHOTS, false),
-    recentShotLookbackCount: parseEnvNumber(process.env.RECENT_SHOT_LOOKBACK_COUNT, 5),
-    brewRepairIntervalMs: parseEnvNumber(process.env.BREW_REPAIR_INTERVAL_MS, 3600000), // 1 hour
-  },
-  time: {
-    brewTitleTimeZone: process.env.BREW_TITLE_TIMEZONE || process.env.TZ || "America/Los_Angeles",
   },
   http: {
     port: parseEnvNumber(process.env.HTTP_PORT, 3000),
   },
   data: {
     dir: process.env.DATA_DIR || "./data",
+    shotRetentionDays: parseEnvNumber(process.env.SHOT_RETENTION_DAYS, 7),
+  },
+  connectivity: {
+    cooldownMs: parseEnvNumber(process.env.CONNECTIVITY_COOLDOWN_MS, 180000),
   },
 } as const;

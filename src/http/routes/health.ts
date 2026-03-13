@@ -1,8 +1,6 @@
 import { Router } from "express";
 import type { GaggiMateClient } from "../../gaggimate/client.js";
-import type { NotionClient } from "../../notion/client.js";
 import type { SyncState } from "../../sync/state.js";
-import { config } from "../../config.js";
 
 const startTime = Date.now();
 const buildDate = process.env.BUILD_DATE ?? null;
@@ -10,24 +8,19 @@ const gitSha = process.env.GIT_SHA ?? null;
 
 export function createHealthRouter(
   gaggimate: GaggiMateClient,
-  notion: NotionClient,
   getSyncState: () => SyncState | null,
 ): Router {
   const router = Router();
 
   router.get("/", async (_req, res) => {
     try {
-      const [gaggiReachable, notionConnected] = await Promise.all([
-        gaggimate.isReachable(),
-        notion.isConnected(),
-      ]);
+      const gaggiReachable = await gaggimate.isReachable();
       const gaggimateDiagnostics = typeof (gaggimate as any).getConnectionDiagnostics === "function"
         ? (gaggimate as any).getConnectionDiagnostics()
         : null;
 
       const syncState = getSyncState();
 
-      const imageUploadDisabled = notion.imageUploadDisabled;
       res.json({
         status: "ok",
         version: buildDate ?? "dev",
@@ -36,13 +29,6 @@ export function createHealthRouter(
           host: gaggimate.host,
           reachable: gaggiReachable,
           ...(gaggimateDiagnostics ? { websocket: gaggimateDiagnostics } : {}),
-        },
-        notion: {
-          connected: notionConnected,
-          ...(imageUploadDisabled ? { imageUploadDisabled } : {}),
-        },
-        webhook: {
-          signatureVerificationEnabled: config.webhook.secret.length > 0,
         },
         lastShotSync: syncState?.lastSyncTime ?? null,
         lastShotId: syncState?.lastSyncedShotId ?? null,

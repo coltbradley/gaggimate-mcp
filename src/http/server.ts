@@ -1,36 +1,32 @@
 import express from "express";
 import type { GaggiMateClient } from "../gaggimate/client.js";
-import type { NotionClient } from "../notion/client.js";
+import type { ShotCache } from "../sync/shotCache.js";
 import type { SyncState } from "../sync/state.js";
+import { createAuthMiddleware } from "./middleware/auth.js";
 import { createHealthRouter } from "./routes/health.js";
-import { createWebhookRouter } from "./routes/webhook.js";
 import { createDeviceRouter } from "./routes/device.js";
-import { getControlPanelHtml } from "./controlPanelHtml.js";
+import { createShotsRouter } from "./routes/shots.js";
 
 export interface ServerOptions {
+  apiToken: string;
   getSyncState: () => SyncState | null;
 }
 
 export function createServer(
   gaggimate: GaggiMateClient,
-  notion: NotionClient,
+  shotCache: ShotCache,
   options: ServerOptions,
 ): express.Express {
   const app = express();
+  app.use(express.json());
 
-  app.use(express.json({
-    verify: (req, _res, buf) => {
-      (req as express.Request & { rawBody?: string }).rawBody = buf.toString("utf8");
-    },
-  }));
+  if (options.apiToken) {
+    app.use(createAuthMiddleware(options.apiToken));
+  }
 
-  app.use("/health", createHealthRouter(gaggimate, notion, options.getSyncState));
-  app.use("/webhook", createWebhookRouter(gaggimate, notion));
-  app.use("/api/device", createDeviceRouter(gaggimate, notion));
-
-  app.get("/control", (_req, res) => {
-    res.type("html").send(getControlPanelHtml("/api/device"));
-  });
+  app.use("/health", createHealthRouter(gaggimate, options.getSyncState));
+  app.use("/device", createDeviceRouter(gaggimate));
+  app.use("/shots", createShotsRouter(shotCache));
 
   return app;
 }
