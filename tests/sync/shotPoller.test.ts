@@ -43,6 +43,7 @@ describe("ShotPoller", () => {
     const gaggimate = {
       fetchShotHistory: vi.fn().mockResolvedValue([{ id: "1" }]),
       fetchShot: vi.fn().mockResolvedValue(createMockShotData()),
+      fetchShotNotes: vi.fn().mockResolvedValue(null),
       fetchProfiles: vi.fn().mockResolvedValue([{ label: "Device Profile", id: "profile-1" }]),
       uploadBrewChart: vi.fn(),
     };
@@ -87,6 +88,7 @@ describe("ShotPoller", () => {
       // Index returns a shot that is still recording (SHOT_FLAG_COMPLETED not set)
       fetchShotHistory: vi.fn().mockResolvedValue([{ id: "5", incomplete: true }]),
       fetchShot: vi.fn(),
+      fetchShotNotes: vi.fn().mockResolvedValue(null),
       fetchProfiles: vi.fn(),
       uploadBrewChart: vi.fn(),
     };
@@ -138,6 +140,7 @@ describe("ShotPoller", () => {
         { id: "5", incomplete: true },
       ]),
       fetchShot: vi.fn().mockResolvedValue({ ...createMockShotData(), id: "6", incomplete: false }),
+      fetchShotNotes: vi.fn().mockResolvedValue(null),
       fetchProfiles: vi.fn().mockResolvedValue([{ label: "Device Profile", id: "profile-1" }]),
       uploadBrewChart: vi.fn(),
     };
@@ -196,6 +199,7 @@ describe("ShotPoller", () => {
         profileId: "profile-1",
         profileName: "Device Profile",
       })),
+      fetchShotNotes: vi.fn().mockResolvedValue(null),
       fetchProfiles: vi.fn(),
       uploadBrewChart: vi.fn(),
     };
@@ -264,6 +268,7 @@ describe("ShotPoller", () => {
         profileId: "profile-1",
         profileName: "Device Profile",
       })),
+      fetchShotNotes: vi.fn().mockResolvedValue(null),
       fetchProfiles: vi.fn(),
       uploadBrewChart: vi.fn(),
     };
@@ -318,6 +323,7 @@ describe("ShotPoller", () => {
         if (shotId === "3") return Promise.resolve({ ...staleShot, id: "3" });
         return Promise.resolve({ ...staleShot, id: "2" });
       }),
+      fetchShotNotes: vi.fn().mockResolvedValue(null),
       fetchProfiles: vi.fn().mockResolvedValue([{ label: "Device Profile", id: "profile-1" }]),
       uploadBrewChart: vi.fn().mockResolvedValue(true),
     };
@@ -386,6 +392,7 @@ describe("ShotPoller", () => {
     const gaggimate = {
       fetchShotHistory: vi.fn().mockResolvedValue(shots),
       fetchShot: vi.fn(),
+      fetchShotNotes: vi.fn().mockResolvedValue(null),
       fetchProfiles: vi.fn(),
       uploadBrewChart: vi.fn().mockResolvedValue(true),
     };
@@ -433,6 +440,7 @@ describe("ShotPoller", () => {
     const gaggimate = {
       fetchShotHistory: vi.fn().mockResolvedValue(shots),
       fetchShot: vi.fn(),
+      fetchShotNotes: vi.fn().mockResolvedValue(null),
       fetchProfiles: vi.fn(),
       uploadBrewChart: vi.fn().mockResolvedValue(true),
     };
@@ -490,6 +498,7 @@ describe("ShotPoller", () => {
         return Promise.resolve([]);
       }),
       fetchShot: vi.fn(),
+      fetchShotNotes: vi.fn().mockResolvedValue(null),
       fetchProfiles: vi.fn(),
       uploadBrewChart: vi.fn(),
     };
@@ -547,6 +556,7 @@ describe("ShotPoller", () => {
     const gaggimate = {
       fetchShotHistory: vi.fn().mockRejectedValue(networkError),
       fetchShot: vi.fn(),
+      fetchShotNotes: vi.fn().mockResolvedValue(null),
       fetchProfiles: vi.fn(),
       uploadBrewChart: vi.fn(),
     };
@@ -599,6 +609,7 @@ describe("ShotPoller", () => {
         { id: "1", incomplete: false },
       ]),
       fetchShot: vi.fn().mockRejectedValue(networkError),
+      fetchShotNotes: vi.fn().mockResolvedValue(null),
       fetchProfiles: vi.fn(),
       uploadBrewChart: vi.fn(),
     };
@@ -640,6 +651,121 @@ describe("ShotPoller", () => {
       expect(gaggimate.fetchShot).toHaveBeenCalledTimes(1);
     } finally {
       warnSpy.mockRestore();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("calls fetchShotNotes with the numeric shot ID during per-shot sync", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "shot-poller-test-"));
+
+    const gaggimate = {
+      fetchShotHistory: vi.fn().mockResolvedValue([{ id: "7", incomplete: false }]),
+      fetchShot: vi.fn().mockResolvedValue({ ...createMockShotData(), id: "7" }),
+      fetchShotNotes: vi.fn().mockResolvedValue({
+        id: 7,
+        doseIn: 18.5,
+        doseOut: 36.0,
+        ratio: "1:1.9",
+        grindSetting: "12",
+        beanType: "Ethiopia Yirgacheffe",
+        balanceTaste: "balanced",
+      }),
+      fetchProfiles: vi.fn(),
+      uploadBrewChart: vi.fn().mockResolvedValue(true),
+    };
+
+    const notion = {
+      findBrewByShotId: vi.fn().mockResolvedValue(null),
+      hasProfileByName: vi.fn().mockResolvedValue(true),
+      normalizeProfileName: vi.fn().mockImplementation((name: string) => name.trim().toLowerCase()),
+      createDraftProfile: vi.fn(),
+      uploadProfileImage: vi.fn(),
+      createBrew: vi.fn().mockResolvedValue("brew-page-7"),
+      updateBrewFromData: vi.fn(),
+      brewHasProfileImage: vi.fn().mockResolvedValue(true),
+      imageUploadDisabled: null,
+      uploadBrewChart: vi.fn().mockResolvedValue(true),
+    };
+
+    try {
+      const poller = new ShotPoller(gaggimate as any, notion as any, {
+        intervalMs: 1000,
+        dataDir,
+        recentShotLookbackCount: 5,
+        brewTitleTimeZone: "America/Los_Angeles",
+        repairIntervalMs: -1,
+      });
+
+      await (poller as any).poll();
+
+      // fetchShotNotes must be called with the numeric shot ID
+      expect(gaggimate.fetchShotNotes).toHaveBeenCalledWith(7);
+
+      // The brew should have been created with shot notes fields populated
+      expect(notion.createBrew).toHaveBeenCalledWith(
+        expect.objectContaining({
+          activityId: "7",
+          doseIn: 18.5,
+          doseOut: 36.0,
+          ratio: "1:1.9",
+          grindSetting: "12",
+          beanType: "Ethiopia Yirgacheffe",
+          tasteBal: "balanced",
+        }),
+        expect.any(String),
+      );
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("gracefully handles null shot notes and still syncs the brew with analysis fields", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "shot-poller-test-"));
+
+    const gaggimate = {
+      fetchShotHistory: vi.fn().mockResolvedValue([{ id: "8", incomplete: false }]),
+      fetchShot: vi.fn().mockResolvedValue({ ...createMockShotData(), id: "8" }),
+      fetchShotNotes: vi.fn().mockResolvedValue(null),
+      fetchProfiles: vi.fn(),
+      uploadBrewChart: vi.fn().mockResolvedValue(true),
+    };
+
+    const notion = {
+      findBrewByShotId: vi.fn().mockResolvedValue(null),
+      hasProfileByName: vi.fn().mockResolvedValue(true),
+      normalizeProfileName: vi.fn().mockImplementation((name: string) => name.trim().toLowerCase()),
+      createDraftProfile: vi.fn(),
+      uploadProfileImage: vi.fn(),
+      createBrew: vi.fn().mockResolvedValue("brew-page-8"),
+      updateBrewFromData: vi.fn(),
+      brewHasProfileImage: vi.fn().mockResolvedValue(true),
+      imageUploadDisabled: null,
+      uploadBrewChart: vi.fn().mockResolvedValue(true),
+    };
+
+    try {
+      const poller = new ShotPoller(gaggimate as any, notion as any, {
+        intervalMs: 1000,
+        dataDir,
+        recentShotLookbackCount: 5,
+        brewTitleTimeZone: "America/Los_Angeles",
+        repairIntervalMs: -1,
+      });
+
+      await (poller as any).poll();
+
+      expect(gaggimate.fetchShotNotes).toHaveBeenCalledWith(8);
+      // Brew should be created without shot notes fields but with analysis fields present
+      // (analysis is always run — phaseSummary may be empty string for a single-sample shot)
+      expect(notion.createBrew).toHaveBeenCalledWith(
+        expect.objectContaining({ activityId: "8" }),
+        expect.any(String),
+      );
+      const brewArg = (notion.createBrew as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      // No shot notes fields when notes are null
+      expect(brewArg.doseIn).toBeUndefined();
+      expect(brewArg.beanType).toBeUndefined();
+    } finally {
       rmSync(dataDir, { recursive: true, force: true });
     }
   });

@@ -5,6 +5,7 @@ import { SyncState } from "./state.js";
 import { shotToBrewData } from "../notion/mappers.js";
 import { transformShotForAI } from "../transformers/shotTransformer.js";
 import { isConnectivityError, summarizeConnectivityError } from "../utils/connectivity.js";
+import { analyzeShotData } from "../analysis/shotAnalysis.js";
 
 interface ShotPollerOptions {
   intervalMs: number;
@@ -408,11 +409,13 @@ export class ShotPoller {
             continue;
           }
 
-          // Fetch shot data and check for existing Notion brew in parallel —
+          // Fetch shot data, shot notes, and check for existing Notion brew in parallel —
           // they hit different services (GaggiMate HTTP vs Notion API).
-          const [shotData, existing] = await Promise.all([
+          const numericId = numId(shotListItem);
+          const [shotData, existing, shotNotes] = await Promise.all([
             this.gaggimate.fetchShot(shotListItem.id),
             this.notion.findBrewByShotId(shotListItem.id),
+            this.gaggimate.fetchShotNotes(numericId).catch(() => null),
           ]);
 
           if (!shotData) {
@@ -438,9 +441,14 @@ export class ShotPoller {
           const transformed = transformShotForAI(shotData, true);
           const shotJsonStr = JSON.stringify(transformed);
 
+          // Run DDSA analysis (pure function, always returns a result)
+          const analysis = analyzeShotData(shotData);
+
           // Map to brew data and create in Notion
           const brewData = shotToBrewData(shotData, transformed, {
             timeZone: this.options.brewTitleTimeZone,
+            analysis,
+            shotNotes,
           });
 
           // If the shot references a profile that doesn't exist in Notion yet,

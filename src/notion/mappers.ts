@@ -1,9 +1,13 @@
 import type { ShotData } from "../parsers/binaryShot.js";
 import type { TransformedShot } from "../transformers/shotTransformer.js";
+import type { ShotAnalysis } from "../analysis/types.js";
+import type { ShotNotes } from "../gaggimate/types.js";
 import type { BrewData } from "./types.js";
 
 interface BrewTitleFormatOptions {
   timeZone?: string;
+  analysis?: ShotAnalysis;
+  shotNotes?: ShotNotes | null;
 }
 
 /**
@@ -60,6 +64,8 @@ export function shotToBrewData(
   const shotNumber = formatShotNumber(shot.id);
   const dateLabel = formatBrewDate(isoDate, options);
 
+  const { analysis, shotNotes } = options ?? {};
+
   return {
     activityId: shot.id,
     title: `${shotNumber} - ${dateLabel}`,
@@ -72,6 +78,23 @@ export function shotToBrewData(
     totalVolume: transformed.summary.flow.total_volume_ml,
     profileName: transformed.metadata.profile_name,
     source: "Auto",
+    // Shot notes (optional — null if no notes were stored for this shot)
+    ...(shotNotes != null && {
+      doseIn: shotNotes.doseIn,
+      doseOut: shotNotes.doseOut,
+      ratio: shotNotes.ratio,
+      grindSetting: shotNotes.grindSetting,
+      beanType: shotNotes.beanType,
+      tasteBal: shotNotes.balanceTaste,
+    }),
+    // DDSA analysis (optional — provided when analyzeShotData has been run)
+    ...(analysis != null && {
+      avgPuckResistance: analysis.avgPuckResistance ?? undefined,
+      peakPuckResistance: analysis.peakPuckResistance ?? undefined,
+      weightFlowRate: analysis.avgWeightFlowRate ?? undefined,
+      phaseSummary: analysis.phaseSummary || undefined,
+      exitReason: analysis.exitReason ?? undefined,
+    }),
   };
 }
 
