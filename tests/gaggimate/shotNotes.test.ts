@@ -84,7 +84,7 @@ describe("GaggiMateClient.fetchShotNotes", () => {
         cb?.();
         const parsed = JSON.parse(payload);
         expect(parsed.tp).toBe("req:history:notes:get");
-        expect(parsed.id).toBe(7);
+        expect(parsed.id).toBe("000007");
         client.handleSharedMessage(
           JSON.stringify({ tp: "res:history:notes:get", rid: parsed.rid, notes: expectedNotes }),
         );
@@ -159,11 +159,13 @@ describe("GaggiMateClient.saveShotNotes", () => {
     expect(fakeWs.send).toHaveBeenCalledTimes(1);
     const sent = capturedPayloads[0];
     expect(sent.tp).toBe("req:history:notes:save");
-    expect(sent.id).toBe(12);
-    expect(sent.rating).toBe(4);
-    expect(sent.beanType).toBe("Guatemala Huehuetenango");
-    expect(sent.grindSetting).toBe("13");
-    expect(sent.balanceTaste).toBe("sour");
+    expect(sent.id).toBe("000012");
+    expect(sent.notes).toEqual({
+      rating: 4,
+      beanType: "Guatemala Huehuetenango",
+      grindSetting: "13",
+      balanceTaste: "sour",
+    });
   });
 
   it("propagates errors from the device (save failure is meaningful)", async () => {

@@ -490,7 +490,7 @@ export class GaggiMateClient {
       return await this.sendWsRequest<ShotNotes>({
         reqType: "req:history:notes:get",
         resType: "res:history:notes:get",
-        payload: { id: shotId },
+        payload: { id: String(shotId).padStart(6, "0") },
         extractResult: (res) => res.notes ?? null,
         errorPrefix: "Failed to fetch shot notes",
       });
@@ -504,7 +504,7 @@ export class GaggiMateClient {
     await this.sendWsRequest<void>({
       reqType: "req:history:notes:save",
       resType: "res:history:notes:save",
-      payload: { id: shotId, ...notes },
+      payload: { id: String(shotId).padStart(6, "0"), notes },
       extractResult: () => undefined,
       errorPrefix: "Failed to save shot notes",
     });

@@ -23,7 +23,7 @@ export class ShotPoller {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   private boundStatusHandler: ((event: any) => void) | null = null;
-  private lastSeenBrewState: string | null = null;
+  private lastSeenBrewState: boolean = false;
   private connectivityWarningActive = false;
   // When set, poll() returns early until this timestamp passes (avoids hammering an
   // offline device every interval — resets as soon as the device responds again).
@@ -79,12 +79,15 @@ export class ShotPoller {
   }
 
   private handleStatusEvent(event: any): void {
-    const brewState = event?.process?.state ?? event?.s;
-    if (this.lastSeenBrewState === "brewing" && brewState !== "brewing") {
+    // Firmware sends process.a (1=active, 0=idle) and process.s ("brew"/"infusion")
+    const processActive = event?.process?.a;
+    const processState = event?.process?.s;
+    const isBrewing = processActive === 1 && (processState === "brew" || processState === "infusion");
+    if (this.lastSeenBrewState === true && !isBrewing) {
       console.log("Shot completion detected via evt:status, triggering sync");
       setTimeout(() => this.poll(), 2000);
     }
-    this.lastSeenBrewState = brewState ?? this.lastSeenBrewState;
+    this.lastSeenBrewState = isBrewing;
   }
 
   /**
