@@ -23,10 +23,7 @@ export interface BrewData {
 
   // Shot notes fields
   doseIn?: number;
-  doseOut?: number;
-  ratio?: string;
-  grindSetting?: string;
-  beanType?: string;
+  grindSetting?: number;
   tasteBal?: string;
 
   // DDSA analysis fields

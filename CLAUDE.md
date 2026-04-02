@@ -213,8 +213,47 @@ All numeric values are rounded to 1 decimal place. Analysis is stored in the `Sh
 
 The device supports per-shot text notes stored on the GaggiMate. The bridge:
 - **Fetches notes** during shot sync (`gaggimate.fetchShotNotes(id)`) in parallel with `.slog` fetch and Notion lookup
-- **Syncs to Notion** — notes are included in the brew create/update payload
+- **Syncs to Notion** — `doseIn` → `Dose In` (number), `grindSetting` → `Grind Setting` (number), `balanceTaste` → `Taste Balance` (select)
+- **Not synced:** `doseOut` maps to existing `Yield Out` (already written from shot binary weight data), `ratio` is a Notion formula (Yield Out ÷ Dose In), `beanType` has no direct property (use `Beans` relation instead)
 - **Read/write via MCP** — `get_shot_notes` and `save_shot_notes` tools allow Claude to read and write notes on demand
+
+## Notion Brews DB Schema
+
+**System-written properties** (written by bridge on every sync):
+
+| Property | Type | Source |
+|---|---|---|
+| `Brew` | title | `#047 - Feb 14 AM` formatted from shot ID + date |
+| `Activity ID` | text | GaggiMate shot ID (dedup key) |
+| `Date` | date | Shot timestamp |
+| `Brew Time` | number | Duration in seconds |
+| `Brew Temp` | number | Average temperature (°C) |
+| `Peak Pressure` | number | Max pressure (bar) |
+| `Pre-infusion Time` | number | Preinfusion duration (seconds) |
+| `Total Volume` | number | Volume in mL |
+| `Yield Out` | number | Final weight in grams (nullable) |
+| `Source` | select | "Auto" or "Manual" |
+| `Dose In` | number | From shot notes (grams, nullable) |
+| `Grind Setting` | number | From shot notes (nullable) |
+| `Taste Balance` | select | From shot notes: bitter/balanced/sour (nullable) |
+| `Avg Puck Resistance` | number | DDSA analysis (nullable) |
+| `Peak Puck Resistance` | number | DDSA analysis (nullable) |
+| `Weight Flow Rate` | number | DDSA analysis, g/s (nullable) |
+| `Phase Summary` | text | DDSA: e.g. "Preinfusion: 8s @ 3 bar → Brew: 24s @ 9 bar" |
+| `Exit Reason` | text | DDSA: e.g. "Weight Stop" (nullable) |
+| `Shot JSON` | text | Full transformed shot + analysis JSON |
+| `Brew Profile` | file | SVG chart image |
+
+**Computed properties** (Notion formulas, not written by bridge):
+| `Ratio` | formula | Yield Out ÷ Dose In |
+| `Bean Age` | formula | Days since related bean's Roast Date |
+
+**User-owned properties** (never overwritten by bridge):
+| `Notes` | text | Free-form user notes |
+| `Taste Notes` | text | Flavor descriptors |
+| `Channeling` | checkbox | Observed channeling |
+| `Beans` | relation | Link to Beans DB |
+| `Profile` | relation | Link to Profiles DB |
 
 ## Debug Endpoints
 

@@ -81,10 +81,7 @@ export function shotToBrewData(
     // Shot notes (optional — null if no notes were stored for this shot)
     ...(shotNotes != null && {
       doseIn: shotNotes.doseIn,
-      doseOut: shotNotes.doseOut,
-      ratio: shotNotes.ratio,
-      grindSetting: shotNotes.grindSetting,
-      beanType: shotNotes.beanType,
+      grindSetting: shotNotes.grindSetting != null ? Number(shotNotes.grindSetting) : undefined,
       tasteBal: shotNotes.balanceTaste,
     }),
     // DDSA analysis (optional — provided when analyzeShotData has been run)
@@ -146,10 +143,7 @@ export function brewDataToNotionProperties(brew: BrewData): Record<string, any> 
 
   // Shot notes fields (optional)
   if (brew.doseIn != null) properties["Dose In"] = { number: brew.doseIn };
-  if (brew.doseOut != null) properties["Dose Out"] = { number: brew.doseOut };
-  if (brew.ratio) properties["Ratio"] = { rich_text: [{ text: { content: brew.ratio } }] };
-  if (brew.grindSetting) properties["Grind Setting"] = { rich_text: [{ text: { content: brew.grindSetting } }] };
-  if (brew.beanType) properties["Bean Type"] = { rich_text: [{ text: { content: brew.beanType } }] };
+  if (brew.grindSetting != null) properties["Grind Setting"] = { number: brew.grindSetting };
   if (brew.tasteBal) properties["Taste Balance"] = { select: { name: brew.tasteBal } };
 
   // DDSA analysis fields (optional)

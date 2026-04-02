@@ -706,10 +706,7 @@ describe("ShotPoller", () => {
         expect.objectContaining({
           activityId: "7",
           doseIn: 18.5,
-          doseOut: 36.0,
-          ratio: "1:1.9",
-          grindSetting: "12",
-          beanType: "Ethiopia Yirgacheffe",
+          grindSetting: 12,
           tasteBal: "balanced",
         }),
         expect.any(String),
@@ -764,7 +761,7 @@ describe("ShotPoller", () => {
       const brewArg = (notion.createBrew as ReturnType<typeof vi.fn>).mock.calls[0][0];
       // No shot notes fields when notes are null
       expect(brewArg.doseIn).toBeUndefined();
-      expect(brewArg.beanType).toBeUndefined();
+      expect(brewArg.grindSetting).toBeUndefined();
     } finally {
       rmSync(dataDir, { recursive: true, force: true });
     }

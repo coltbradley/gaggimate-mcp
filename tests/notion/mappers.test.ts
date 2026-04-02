@@ -127,19 +127,13 @@ describe("brewDataToNotionProperties", () => {
   it("maps shot notes fields to correct Notion property types", () => {
     const brew = shotToBrewData(createMockShotData(), createMockTransformed());
     brew.doseIn = 18.5;
-    brew.doseOut = 36.2;
-    brew.ratio = "1:2";
-    brew.grindSetting = "14";
-    brew.beanType = "Ethiopia Yirgacheffe";
-    brew.tasteBal = "Balanced";
+    brew.grindSetting = 14;
+    brew.tasteBal = "balanced";
     const props = brewDataToNotionProperties(brew);
 
     expect(props["Dose In"].number).toBe(18.5);
-    expect(props["Dose Out"].number).toBe(36.2);
-    expect(props["Ratio"].rich_text[0].text.content).toBe("1:2");
-    expect(props["Grind Setting"].rich_text[0].text.content).toBe("14");
-    expect(props["Bean Type"].rich_text[0].text.content).toBe("Ethiopia Yirgacheffe");
-    expect(props["Taste Balance"].select.name).toBe("Balanced");
+    expect(props["Grind Setting"].number).toBe(14);
+    expect(props["Taste Balance"].select.name).toBe("balanced");
   });
 
   it("maps DDSA analysis fields to correct Notion property types", () => {
@@ -164,10 +158,7 @@ describe("brewDataToNotionProperties", () => {
     const props = brewDataToNotionProperties(brew);
 
     expect(props["Dose In"]).toBeUndefined();
-    expect(props["Dose Out"]).toBeUndefined();
-    expect(props["Ratio"]).toBeUndefined();
     expect(props["Grind Setting"]).toBeUndefined();
-    expect(props["Bean Type"]).toBeUndefined();
     expect(props["Taste Balance"]).toBeUndefined();
     expect(props["Avg Puck Resistance"]).toBeUndefined();
     expect(props["Peak Puck Resistance"]).toBeUndefined();
