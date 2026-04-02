@@ -455,6 +455,82 @@ ghcr.io/graphite-productions/gaggimate-bridge:2026-02-25
 
 ---
 
+## TrueNAS Deployment
+
+### Enable SSH on TrueNAS
+
+1. In the TrueNAS web UI, go to **System Settings → Services**
+2. Find **SSH** and toggle it on
+3. Click the pencil icon → ensure **Log in as Root with Password** is enabled (or configure key-based auth)
+4. Click **Save**, then **Start** if not already running
+
+### Initial Deployment
+
+SSH into your TrueNAS box, then:
+
+```bash
+# Create a directory for the bridge
+mkdir -p /mnt/tank/apps/gaggimate-bridge/data
+
+# Copy or create your docker-compose.yml and .env
+cd /mnt/tank/apps/gaggimate-bridge
+# (scp docker-compose.yml .env from your workstation, or create them here)
+
+# Pull the image and start
+docker compose pull
+docker compose up -d
+
+# Verify it's running
+docker compose logs -f
+curl localhost:3000/health
+```
+
+### Auto-Updates with Watchtower
+
+The `docker-compose.yml` includes a Watchtower service that polls GHCR every 5 minutes and automatically pulls new images when a push to `main` publishes a new `latest` tag.
+
+```bash
+# Check Watchtower is running
+docker ps | grep watchtower
+
+# Watchtower logs show pulls and restarts
+docker logs watchtower --tail 20
+```
+
+No manual intervention needed — CI publishes a new image on every merge to `main`, and Watchtower picks it up within 5 minutes.
+
+### Verification
+
+```bash
+# Health check — both reachable and connected should be true
+curl truenas-ip:3000/health
+
+# Detailed sync and diagnostics
+curl truenas-ip:3000/status
+
+# Recent logs (last 100 lines)
+curl truenas-ip:3000/logs
+```
+
+### Claude Code MCP Config
+
+To connect Claude Code directly to your running bridge, add this to `~/.claude.json` (or Claude Code's MCP settings):
+
+```json
+{
+  "mcpServers": {
+    "gaggimate": {
+      "type": "url",
+      "url": "http://TRUENAS_IP:3000/mcp"
+    }
+  }
+}
+```
+
+Replace `TRUENAS_IP` with your TrueNAS IP address. Once connected, Claude Code can query brews, analyze shots, manage profiles, and interact with the device directly.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
