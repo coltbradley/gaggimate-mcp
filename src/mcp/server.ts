@@ -5,15 +5,16 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { GaggiMateClient } from "../gaggimate/client.js";
 import type { NotionClient } from "../notion/client.js";
+import { registerTools } from "./tools.js";
 
 const transports: Record<string, StreamableHTTPServerTransport> = {};
 
-function createMcpServer(_gaggimate: GaggiMateClient, _notion: NotionClient): McpServer {
+function createMcpServer(gaggimate: GaggiMateClient, notion: NotionClient): McpServer {
   const server = new McpServer(
     { name: "gaggimate-bridge", version: "2.0.0" },
     { capabilities: { logging: {} } },
   );
-  // Tools and resources will be registered here in Tasks 8-11
+  registerTools(server, gaggimate, notion);
   return server;
 }
 

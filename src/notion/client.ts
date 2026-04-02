@@ -398,6 +398,49 @@ export class NotionClient {
     return this.findProfilePageByName(profileName);
   }
 
+  // ─── MCP Query Methods ────────────────────────────────────
+
+  /** Query the most recent N brews from the Brews DB, sorted by Date descending */
+  async queryRecentBrews(limit: number): Promise<any[]> {
+    const clampedLimit = Math.min(Math.max(1, limit), 50);
+    const response = await this.client.databases.query({
+      database_id: this.config.brewsDbId,
+      sorts: [{ property: "Date", direction: "descending" }],
+      page_size: clampedLimit,
+    });
+    return response.results;
+  }
+
+  /** Query all profiles from the Profiles DB */
+  async queryProfiles(): Promise<any[]> {
+    const index = await this.listExistingProfiles();
+    return index.all.map((r) => ({
+      pageId: r.pageId,
+      name: r.normalizedName,
+      profileId: r.profileId,
+      pushStatus: r.pushStatus,
+      activeOnMachine: r.activeOnMachine,
+      favorite: r.favorite,
+      selected: r.selected,
+      source: r.source,
+    }));
+  }
+
+  /** Fetch full page properties for a brew by its shot/activity ID */
+  async queryBrewByActivityId(shotId: string): Promise<any | null> {
+    const normalizedShotId = shotId.trim();
+    if (!normalizedShotId) return null;
+    const response = await this.client.databases.query({
+      database_id: this.config.brewsDbId,
+      filter: {
+        property: "Activity ID",
+        rich_text: { equals: normalizedShotId },
+      },
+      page_size: 1,
+    });
+    return response.results.length > 0 ? response.results[0] : null;
+  }
+
   // ─── Beans ────────────────────────────────────────────────
 
   /** List beans with optional filters */
