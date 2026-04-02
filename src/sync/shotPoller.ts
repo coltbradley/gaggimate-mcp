@@ -21,6 +21,8 @@ export class ShotPoller {
   private options: ShotPollerOptions;
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  private boundStatusHandler: ((event: any) => void) | null = null;
+  private lastSeenBrewState: string | null = null;
   private connectivityWarningActive = false;
   // When set, poll() returns early until this timestamp passes (avoids hammering an
   // offline device every interval — resets as soon as the device responds again).
@@ -56,17 +58,32 @@ export class ShotPoller {
   start(): void {
     if (this.timer) return;
     console.log(`Shot poller started (every ${this.options.intervalMs}ms)`);
+    this.boundStatusHandler = this.handleStatusEvent.bind(this);
+    this.gaggimate.on("evt:status", this.boundStatusHandler);
     this.timer = setInterval(() => this.poll(), this.options.intervalMs);
     // Run immediately on start
     this.poll();
   }
 
   stop(): void {
+    if (this.boundStatusHandler) {
+      this.gaggimate.off("evt:status", this.boundStatusHandler);
+      this.boundStatusHandler = null;
+    }
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
     }
     console.log("Shot poller stopped");
+  }
+
+  private handleStatusEvent(event: any): void {
+    const brewState = event?.process?.state ?? event?.s;
+    if (this.lastSeenBrewState === "brewing" && brewState !== "brewing") {
+      console.log("Shot completion detected via evt:status, triggering sync");
+      setTimeout(() => this.poll(), 2000);
+    }
+    this.lastSeenBrewState = brewState ?? this.lastSeenBrewState;
   }
 
   /**

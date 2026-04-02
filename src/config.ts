@@ -63,7 +63,7 @@ export const config = {
     secret: parseOptionalSecret(process.env.WEBHOOK_SECRET),
   },
   sync: {
-    intervalMs: parseEnvNumber(process.env.SYNC_INTERVAL_MS, 30000),
+    intervalMs: parseEnvNumber(process.env.SYNC_INTERVAL_MS, 300000),
     profileReconcileEnabled: parseEnvBoolean(process.env.PROFILE_RECONCILE_ENABLED, true),
     profileReconcileIntervalMs: parseEnvNumber(process.env.PROFILE_RECONCILE_INTERVAL_MS, 60000),
     profileReconcileDeleteEnabled: parseEnvBoolean(process.env.PROFILE_RECONCILE_DELETE_ENABLED, true),
