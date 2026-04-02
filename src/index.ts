@@ -3,6 +3,7 @@ installLogCapture();
 
 import { config } from "./config.js";
 import { GaggiMateClient } from "./gaggimate/client.js";
+import { ShotCache } from "./sync/shotCache.js";
 import { createServer } from "./http/server.js";
 import { ShotPoller } from "./sync/shotPoller.js";
 import { ProfileReconciler } from "./sync/profileReconciler.js";
@@ -93,6 +94,10 @@ async function main() {
   const gaggimate = new GaggiMateClient(config.gaggimate);
   const notion = new NotionClient(config.notion);
 
+  // Initialize shot cache and prune old shots on startup
+  const shotCache = new ShotCache(config.data.dir);
+  shotCache.prune(config.data.shotRetentionDays);
+
   // Create shot poller (before server so health endpoint can read cached state)
   const shotPoller = new ShotPoller(gaggimate, notion, {
     intervalMs: config.sync.intervalMs,
@@ -106,6 +111,8 @@ async function main() {
   // Start HTTP server
   const app = createServer(gaggimate, notion, {
     getSyncState: () => shotPoller.syncState,
+    shotCache,
+    apiToken: config.api.token || undefined,
   });
   app.listen(config.http.port, () => {
     console.log(`HTTP server listening on port ${config.http.port}`);

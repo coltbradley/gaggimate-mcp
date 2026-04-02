@@ -62,6 +62,9 @@ export const config = {
   webhook: {
     secret: parseOptionalSecret(process.env.WEBHOOK_SECRET),
   },
+  api: {
+    token: process.env.API_TOKEN || "",
+  },
   sync: {
     intervalMs: parseEnvNumber(process.env.SYNC_INTERVAL_MS, 300000),
     profileReconcileEnabled: parseEnvBoolean(process.env.PROFILE_RECONCILE_ENABLED, true),
@@ -90,5 +93,6 @@ export const config = {
   },
   data: {
     dir: process.env.DATA_DIR || "./data",
+    shotRetentionDays: parseEnvNumber(process.env.SHOT_RETENTION_DAYS, 7),
   },
 } as const;
