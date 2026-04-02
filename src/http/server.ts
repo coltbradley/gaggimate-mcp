@@ -5,6 +5,8 @@ import type { SyncState } from "../sync/state.js";
 import { createHealthRouter } from "./routes/health.js";
 import { createWebhookRouter } from "./routes/webhook.js";
 import { createDeviceRouter } from "./routes/device.js";
+import { createLogsRouter } from "./routes/logs.js";
+import { createStatusRouter } from "./routes/status.js";
 import { getControlPanelHtml } from "./controlPanelHtml.js";
 import { mountMcpRoutes } from "../mcp/server.js";
 
@@ -28,6 +30,8 @@ export function createServer(
   app.use("/health", createHealthRouter(gaggimate, notion, options.getSyncState));
   app.use("/webhook", createWebhookRouter(gaggimate, notion));
   app.use("/api/device", createDeviceRouter(gaggimate, notion));
+  app.use("/logs", createLogsRouter());
+  app.use("/status", createStatusRouter(gaggimate, notion, options.getSyncState));
 
   app.get("/control", (_req, res) => {
     res.type("html").send(getControlPanelHtml("/api/device"));

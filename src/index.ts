@@ -1,3 +1,6 @@
+import { installLogCapture } from "./utils/logBuffer.js";
+installLogCapture();
+
 import { config } from "./config.js";
 import { GaggiMateClient } from "./gaggimate/client.js";
 import { createServer } from "./http/server.js";
