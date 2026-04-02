@@ -20,6 +20,21 @@ export interface BrewData {
   totalVolume: number; // ml
   profileName: string; // text fallback for profile relation
   source: "Auto" | "Manual";
+
+  // Shot notes fields
+  doseIn?: number;
+  doseOut?: number;
+  ratio?: string;
+  grindSetting?: string;
+  beanType?: string;
+  tasteBal?: string;
+
+  // DDSA analysis fields
+  avgPuckResistance?: number;
+  peakPuckResistance?: number;
+  weightFlowRate?: number;
+  phaseSummary?: string;
+  exitReason?: string;
 }
 
 export interface BrewUpdateData {

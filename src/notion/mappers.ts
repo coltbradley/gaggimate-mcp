@@ -121,5 +121,20 @@ export function brewDataToNotionProperties(brew: BrewData): Record<string, any> 
     };
   }
 
+  // Shot notes fields (optional)
+  if (brew.doseIn != null) properties["Dose In"] = { number: brew.doseIn };
+  if (brew.doseOut != null) properties["Dose Out"] = { number: brew.doseOut };
+  if (brew.ratio) properties["Ratio"] = { rich_text: [{ text: { content: brew.ratio } }] };
+  if (brew.grindSetting) properties["Grind Setting"] = { rich_text: [{ text: { content: brew.grindSetting } }] };
+  if (brew.beanType) properties["Bean Type"] = { rich_text: [{ text: { content: brew.beanType } }] };
+  if (brew.tasteBal) properties["Taste Balance"] = { select: { name: brew.tasteBal } };
+
+  // DDSA analysis fields (optional)
+  if (brew.avgPuckResistance != null) properties["Avg Puck Resistance"] = { number: Math.round(brew.avgPuckResistance * 10) / 10 };
+  if (brew.peakPuckResistance != null) properties["Peak Puck Resistance"] = { number: Math.round(brew.peakPuckResistance * 10) / 10 };
+  if (brew.weightFlowRate != null) properties["Weight Flow Rate"] = { number: Math.round(brew.weightFlowRate * 10) / 10 };
+  if (brew.phaseSummary) properties["Phase Summary"] = { rich_text: [{ text: { content: brew.phaseSummary } }] };
+  if (brew.exitReason) properties["Exit Reason"] = { rich_text: [{ text: { content: brew.exitReason } }] };
+
   return properties;
 }

@@ -123,4 +123,68 @@ describe("brewDataToNotionProperties", () => {
 
     expect(props["Yield Out"]).toBeUndefined();
   });
+
+  it("maps shot notes fields to correct Notion property types", () => {
+    const brew = shotToBrewData(createMockShotData(), createMockTransformed());
+    brew.doseIn = 18.5;
+    brew.doseOut = 36.2;
+    brew.ratio = "1:2";
+    brew.grindSetting = "14";
+    brew.beanType = "Ethiopia Yirgacheffe";
+    brew.tasteBal = "Balanced";
+    const props = brewDataToNotionProperties(brew);
+
+    expect(props["Dose In"].number).toBe(18.5);
+    expect(props["Dose Out"].number).toBe(36.2);
+    expect(props["Ratio"].rich_text[0].text.content).toBe("1:2");
+    expect(props["Grind Setting"].rich_text[0].text.content).toBe("14");
+    expect(props["Bean Type"].rich_text[0].text.content).toBe("Ethiopia Yirgacheffe");
+    expect(props["Taste Balance"].select.name).toBe("Balanced");
+  });
+
+  it("maps DDSA analysis fields to correct Notion property types", () => {
+    const brew = shotToBrewData(createMockShotData(), createMockTransformed());
+    brew.avgPuckResistance = 4.567;
+    brew.peakPuckResistance = 8.123;
+    brew.weightFlowRate = 2.345;
+    brew.phaseSummary = "PI 6s | Ramp 8s | Flat 14s";
+    brew.exitReason = "Weight reached";
+    const props = brewDataToNotionProperties(brew);
+
+    expect(props["Avg Puck Resistance"].number).toBe(4.6);
+    expect(props["Peak Puck Resistance"].number).toBe(8.1);
+    expect(props["Weight Flow Rate"].number).toBe(2.3);
+    expect(props["Phase Summary"].rich_text[0].text.content).toBe("PI 6s | Ramp 8s | Flat 14s");
+    expect(props["Exit Reason"].rich_text[0].text.content).toBe("Weight reached");
+  });
+
+  it("omits optional fields when null or undefined", () => {
+    const brew = shotToBrewData(createMockShotData(), createMockTransformed());
+    // No optional fields set — all should be absent
+    const props = brewDataToNotionProperties(brew);
+
+    expect(props["Dose In"]).toBeUndefined();
+    expect(props["Dose Out"]).toBeUndefined();
+    expect(props["Ratio"]).toBeUndefined();
+    expect(props["Grind Setting"]).toBeUndefined();
+    expect(props["Bean Type"]).toBeUndefined();
+    expect(props["Taste Balance"]).toBeUndefined();
+    expect(props["Avg Puck Resistance"]).toBeUndefined();
+    expect(props["Peak Puck Resistance"]).toBeUndefined();
+    expect(props["Weight Flow Rate"]).toBeUndefined();
+    expect(props["Phase Summary"]).toBeUndefined();
+    expect(props["Exit Reason"]).toBeUndefined();
+  });
+
+  it("rounds DDSA number fields to 1 decimal place", () => {
+    const brew = shotToBrewData(createMockShotData(), createMockTransformed());
+    brew.avgPuckResistance = 3.999;
+    brew.peakPuckResistance = 7.001;
+    brew.weightFlowRate = 1.555;
+    const props = brewDataToNotionProperties(brew);
+
+    expect(props["Avg Puck Resistance"].number).toBe(4.0);
+    expect(props["Peak Puck Resistance"].number).toBe(7.0);
+    expect(props["Weight Flow Rate"].number).toBe(1.6);
+  });
 });
