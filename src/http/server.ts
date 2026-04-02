@@ -6,6 +6,7 @@ import { createHealthRouter } from "./routes/health.js";
 import { createWebhookRouter } from "./routes/webhook.js";
 import { createDeviceRouter } from "./routes/device.js";
 import { getControlPanelHtml } from "./controlPanelHtml.js";
+import { mountMcpRoutes } from "../mcp/server.js";
 
 export interface ServerOptions {
   getSyncState: () => SyncState | null;
@@ -31,6 +32,8 @@ export function createServer(
   app.get("/control", (_req, res) => {
     res.type("html").send(getControlPanelHtml("/api/device"));
   });
+
+  mountMcpRoutes(app, gaggimate, notion);
 
   return app;
 }
