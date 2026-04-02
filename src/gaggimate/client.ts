@@ -52,6 +52,7 @@ export class GaggiMateClient {
   private sharedWsConnectPromise: Promise<WebSocket> | null = null;
   private sharedWsIdleTimer: NodeJS.Timeout | null = null;
   private pendingRequests = new Map<string, PendingRequest>();
+  private eventListeners: Map<string, Set<(data: any) => void>> = new Map();
   private readonly WS_IDLE_TTL = 8000;
   // Serializes request/response cycles to keep ESP32 WebSocket load predictable.
   private wsRequestQueue: Promise<void> = Promise.resolve();
@@ -101,6 +102,13 @@ export class GaggiMateClient {
     } catch {
       return;
     }
+
+    // Unsolicited device events have a tp field but no rid — dispatch to event listeners.
+    if (response.tp && !response.rid) {
+      this.handleEvent(response);
+      return;
+    }
+
     const pending = this.pendingRequests.get(response.rid);
     if (!pending || response.tp !== pending.resType) return;
 
@@ -113,6 +121,33 @@ export class GaggiMateClient {
     } else {
       pending.resolve(pending.extractResult(response));
     }
+  }
+
+  private handleEvent(message: any): void {
+    const listeners = this.eventListeners.get(message.tp);
+    if (!listeners) return;
+    for (const cb of listeners) {
+      try {
+        cb(message);
+      } catch (err) {
+        console.error(`GaggiMate event listener error for ${message.tp}:`, err);
+      }
+    }
+  }
+
+  /** Subscribe to unsolicited device events (e.g. "evt:status"). */
+  on(eventType: string, callback: (data: any) => void): void {
+    let listeners = this.eventListeners.get(eventType);
+    if (!listeners) {
+      listeners = new Set();
+      this.eventListeners.set(eventType, listeners);
+    }
+    listeners.add(callback);
+  }
+
+  /** Unsubscribe a previously registered event listener. */
+  off(eventType: string, callback: (data: any) => void): void {
+    this.eventListeners.get(eventType)?.delete(callback);
   }
 
   private rejectAllPending(reason: string): void {
