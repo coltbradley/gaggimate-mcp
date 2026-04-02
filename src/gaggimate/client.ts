@@ -3,7 +3,7 @@ import { parseBinaryIndex, indexToShotList } from "../parsers/binaryIndex.js";
 import type { ShotListItem } from "../parsers/binaryIndex.js";
 import { parseBinaryShot } from "../parsers/binaryShot.js";
 import type { ShotData } from "../parsers/binaryShot.js";
-import type { GaggiMateConfig, ProfileData } from "./types.js";
+import type { GaggiMateConfig, ProfileData, ShotNotes } from "./types.js";
 import { normalizeProfileForGaggiMate } from "./profileNormalization.js";
 
 function generateRequestId(): string {
@@ -482,6 +482,32 @@ export class GaggiMateClient {
         extractResult: () => undefined,
         errorPrefix: `Failed to ${action} profile`,
       }));
+  }
+
+  /** Fetch notes for a specific shot via WebSocket. Returns null if notes don't exist or on error. */
+  async fetchShotNotes(shotId: number): Promise<ShotNotes | null> {
+    try {
+      return await this.sendWsRequest<ShotNotes>({
+        reqType: "req:history:notes:get",
+        resType: "res:history:notes:get",
+        payload: { id: shotId },
+        extractResult: (res) => res.notes ?? null,
+        errorPrefix: "Failed to fetch shot notes",
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  /** Save notes for a specific shot via WebSocket. Propagates errors on failure. */
+  async saveShotNotes(shotId: number, notes: Partial<ShotNotes>): Promise<void> {
+    await this.sendWsRequest<void>({
+      reqType: "req:history:notes:save",
+      resType: "res:history:notes:save",
+      payload: { id: shotId, ...notes },
+      extractResult: () => undefined,
+      errorPrefix: "Failed to save shot notes",
+    });
   }
 
   /** Fetch shot history index from GaggiMate HTTP API */

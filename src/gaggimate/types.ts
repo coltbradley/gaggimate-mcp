@@ -29,6 +29,19 @@ export interface ProfilePhase {
   }>;
 }
 
+export interface ShotNotes {
+  id: number;
+  rating?: number;
+  beanType?: string;
+  doseIn?: number;
+  doseOut?: number;
+  ratio?: string;
+  grindSetting?: string;
+  balanceTaste?: "bitter" | "balanced" | "sour";
+  notes?: string;
+  timestamp?: number;
+}
+
 export interface ProfileData {
   id?: string;
   label: string;
