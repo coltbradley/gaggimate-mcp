@@ -2,6 +2,7 @@ import type { ShotData } from "../parsers/binaryShot.js";
 import type { TransformedShot } from "../transformers/shotTransformer.js";
 import type { ShotAnalysis } from "../analysis/types.js";
 import type { ShotNotes } from "../gaggimate/types.js";
+import type { ShotListItem } from "../parsers/binaryIndex.js";
 import type { BrewData } from "./types.js";
 
 interface BrewTitleFormatOptions {
@@ -20,7 +21,7 @@ function formatShotNumber(shotId: string): string {
 /**
  * Format a date for brew title: "Feb 14 AM"
  */
-function formatBrewDate(isoDate: string, options?: BrewTitleFormatOptions): string {
+export function formatBrewDate(isoDate: string, options?: BrewTitleFormatOptions): string {
   const date = new Date(isoDate);
   const formatterOptions: Intl.DateTimeFormatOptions = {
     month: "short",
@@ -92,6 +93,44 @@ export function shotToBrewData(
       phaseSummary: analysis.phaseSummary || undefined,
       exitReason: analysis.exitReason ?? undefined,
     }),
+  };
+}
+
+/**
+ * Build a BrewData from a ShotListItem index entry.
+ * Used as a fallback when the binary .slog fetch fails (firmware bug jniebuhr/gaggimate#650).
+ * DDSA analysis, Brew Profile chart, and Shot JSON are unavailable in this path.
+ */
+export function indexEntryToBrewData(
+  shotListItem: ShotListItem,
+  options?: { timeZone?: string },
+): BrewData {
+  // index timestamp is Unix seconds; 0 means the device didn't record one
+  const isoDate =
+    shotListItem.timestamp > 0
+      ? new Date(shotListItem.timestamp * 1000).toISOString()
+      : new Date().toISOString();
+
+  const shotNumber = formatShotNumber(shotListItem.id);
+  const dateLabel = formatBrewDate(isoDate, options);
+
+  // duration is stored in milliseconds in the index
+  const brewTimeSec =
+    shotListItem.duration > 0 ? Math.round(shotListItem.duration / 1000) : 0;
+
+  return {
+    activityId: shotListItem.id,
+    title: `${shotNumber} - ${dateLabel}`,
+    date: isoDate,
+    brewTime: brewTimeSec,
+    // volume is already converted to grams by binaryIndex (WEIGHT_SCALE applied)
+    yieldOut: shotListItem.volume ?? null,
+    brewTemp: 0,
+    peakPressure: 0,
+    preinfusionTime: 0,
+    totalVolume: 0,
+    profileName: shotListItem.profile || "Unknown",
+    source: "Auto",
   };
 }
 

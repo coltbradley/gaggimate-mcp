@@ -62,6 +62,33 @@ export function isConnectivityError(error: unknown): boolean {
   return markers.some((marker) => text.includes(marker));
 }
 
+/**
+ * Returns true only for errors indicating the device is not network-reachable
+ * (EHOSTUNREACH, ECONNREFUSED, etc.).  Timeouts are deliberately excluded so
+ * that firmware bugs that cause HTTP fetches to hang (jniebuhr/gaggimate#650)
+ * are not mistaken for the device being offline and don't suppress the
+ * metadata fallback path.
+ */
+export function isReachabilityError(error: unknown): boolean {
+  const text = collectErrorText(error).toLowerCase();
+  if (!text) return false;
+
+  const markers = [
+    "ehostunreach",
+    "enetunreach",
+    "ehostdown",
+    "econnrefused",
+    "enotfound",
+    "eai_again",
+    "network is unreachable",
+    "fetch failed",
+    "websocket error",
+    "websocket closed",
+  ];
+
+  return markers.some((marker) => text.includes(marker));
+}
+
 export function summarizeConnectivityError(error: unknown): string {
   const text = collectErrorText(error);
   if (!text) {

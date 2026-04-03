@@ -655,6 +655,158 @@ describe("ShotPoller", () => {
     }
   });
 
+  it("falls back to index entry data and creates a brew when .slog fetch throws", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "shot-poller-test-"));
+    const fetchError = new Error("Request timeout: No response from GaggiMate");
+
+    const gaggimate = {
+      fetchShotHistory: vi.fn().mockResolvedValue([
+        // Provide all ShotListItem fields that indexEntryToBrewData reads
+        {
+          id: "10",
+          incomplete: false,
+          timestamp: 1712000000, // Unix seconds
+          duration: 28000, // ms
+          volume: 36.0, // already scaled grams
+          profile: "My Profile",
+          profileId: "prof-1",
+          samples: 0,
+          rating: null,
+          notes: null,
+          loaded: false,
+          data: null,
+        },
+      ]),
+      // fetchShot throws (simulates firmware .slog hang / timeout)
+      fetchShot: vi.fn().mockRejectedValue(fetchError),
+      fetchShotNotes: vi.fn().mockResolvedValue(null),
+      fetchProfiles: vi.fn(),
+      uploadBrewChart: vi.fn(),
+    };
+
+    const notion = {
+      findBrewByShotId: vi.fn().mockResolvedValue(null),
+      hasProfileByName: vi.fn().mockResolvedValue(true),
+      normalizeProfileName: vi.fn().mockImplementation((name: string) => name.trim().toLowerCase()),
+      createDraftProfile: vi.fn(),
+      uploadProfileImage: vi.fn(),
+      createBrew: vi.fn().mockResolvedValue("brew-fallback-10"),
+      updateBrewFromData: vi.fn(),
+      brewHasProfileImage: vi.fn().mockResolvedValue(true),
+      imageUploadDisabled: null,
+      uploadBrewChart: vi.fn().mockResolvedValue(true),
+    };
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      const poller = new ShotPoller(gaggimate as any, notion as any, {
+        intervalMs: 1000,
+        dataDir,
+        recentShotLookbackCount: 5,
+        brewTitleTimeZone: "America/Los_Angeles",
+        repairIntervalMs: -1,
+      });
+
+      // Seed state so shot 10 is contiguous (cursor advances 9 → 10)
+      (poller as any).state.lastSyncedShotId = "9";
+
+      await (poller as any).poll();
+
+      // Fallback path: brew created without shot JSON
+      expect(notion.createBrew).toHaveBeenCalledTimes(1);
+      const brewArg = (notion.createBrew as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(brewArg.activityId).toBe("10");
+      expect(brewArg.profileName).toBe("My Profile");
+      expect(brewArg.brewTime).toBe(28); // 28000ms → 28s
+      expect(brewArg.yieldOut).toBe(36.0);
+      expect(brewArg.source).toBe("Auto");
+      // No shot JSON passed in fallback
+      expect((notion.createBrew as ReturnType<typeof vi.fn>).mock.calls[0][1]).toBeUndefined();
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(".slog binary fetch failed"),
+        expect.anything(),
+      );
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("created fallback brew entry from index data"));
+
+      // State should advance since the shot was handled
+      expect((poller as any).state.lastSyncedShotId).toBe("10");
+    } finally {
+      warnSpy.mockRestore();
+      logSpy.mockRestore();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("skips fallback create when brew already exists in Notion after .slog fetch failure", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "shot-poller-test-"));
+    const fetchError = new Error("Request timeout: No response from GaggiMate");
+
+    const gaggimate = {
+      fetchShotHistory: vi.fn().mockResolvedValue([
+        {
+          id: "11",
+          incomplete: false,
+          timestamp: 1712001000,
+          duration: 30000,
+          volume: 40.0,
+          profile: "Light Roast",
+          profileId: "prof-2",
+          samples: 0,
+          rating: null,
+          notes: null,
+          loaded: false,
+          data: null,
+        },
+      ]),
+      fetchShot: vi.fn().mockRejectedValue(fetchError),
+      fetchShotNotes: vi.fn().mockResolvedValue(null),
+      fetchProfiles: vi.fn(),
+      uploadBrewChart: vi.fn(),
+    };
+
+    const notion = {
+      // findBrewByShotId returns existing page — no create should happen
+      findBrewByShotId: vi.fn().mockResolvedValue("existing-brew-11"),
+      hasProfileByName: vi.fn().mockResolvedValue(true),
+      normalizeProfileName: vi.fn().mockImplementation((name: string) => name.trim().toLowerCase()),
+      createDraftProfile: vi.fn(),
+      uploadProfileImage: vi.fn(),
+      createBrew: vi.fn().mockResolvedValue("brew-11"),
+      updateBrewFromData: vi.fn(),
+      brewHasProfileImage: vi.fn().mockResolvedValue(true),
+      imageUploadDisabled: null,
+      uploadBrewChart: vi.fn().mockResolvedValue(true),
+    };
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      const poller = new ShotPoller(gaggimate as any, notion as any, {
+        intervalMs: 1000,
+        dataDir,
+        recentShotLookbackCount: 5,
+        brewTitleTimeZone: "America/Los_Angeles",
+        repairIntervalMs: -1,
+      });
+
+      await (poller as any).poll();
+
+      // Brew already exists — must NOT call createBrew again
+      expect(notion.createBrew).not.toHaveBeenCalled();
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining("fallback brew already exists in Notion"),
+      );
+    } finally {
+      warnSpy.mockRestore();
+      logSpy.mockRestore();
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it("calls fetchShotNotes with the numeric shot ID during per-shot sync", async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "shot-poller-test-"));
 
