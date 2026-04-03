@@ -6,6 +6,15 @@ import type { ShotData } from "../parsers/binaryShot.js";
 import type { GaggiMateConfig, ProfileData, ShotNotes } from "./types.js";
 import { normalizeProfileForGaggiMate } from "./profileNormalization.js";
 
+export interface ShotMetadataEntry {
+  id: number;
+  timestamp?: number;
+  profile?: string;
+  duration?: number;
+  volume?: number;
+  sampleCount?: number;
+}
+
 function generateRequestId(): string {
   return `bridge-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
@@ -399,6 +408,26 @@ export class GaggiMateClient {
     };
   }
 
+  /**
+   * Temporarily closes the shared WebSocket before executing an HTTP fetch, then
+   * lets getOrCreateWs() reconnect on the next WS request.
+   *
+   * Background: The GaggiMate ESP32 uses ESPAsyncWebServer's serveStatic() to serve
+   * .slog files.  When a WebSocket connection is open the AsyncTCP queue gets
+   * congested and the HTTP transfer hangs indefinitely.  Closing the WS first
+   * eliminates the contention.  index.bin uses a dedicated server.on() handler and
+   * is not affected, but we wrap it anyway for consistency.
+   */
+  async withHttpExclusion<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.sharedWs && this.sharedWs.readyState === WebSocket.OPEN) {
+      this.sharedWs.close();
+      // Wait briefly for the TCP teardown to complete before the HTTP fetch begins.
+      await new Promise<void>((resolve) => setTimeout(resolve, 500));
+    }
+    // getOrCreateWs() will reconnect automatically on the next WS request.
+    return fn();
+  }
+
   /** Check if GaggiMate is reachable via HTTP */
   async isReachable(): Promise<boolean> {
     try {
@@ -512,68 +541,101 @@ export class GaggiMateClient {
 
   /** Fetch shot history index from GaggiMate HTTP API */
   async fetchShotHistory(limit?: number, offset?: number): Promise<ShotListItem[]> {
-    try {
-      const url = `${this.httpProtocol}://${this.config.host}/api/history/index.bin`;
-      const response = await fetch(url, {
-        method: "GET",
-        headers: { Accept: "application/octet-stream" },
-        signal: AbortSignal.timeout(this.config.requestTimeout),
-      });
+    return this.withHttpExclusion(async () => {
+      try {
+        const url = `${this.httpProtocol}://${this.config.host}/api/history/index.bin`;
+        const response = await fetch(url, {
+          method: "GET",
+          headers: { Accept: "application/octet-stream" },
+          signal: AbortSignal.timeout(this.config.requestTimeout),
+        });
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          return [];
+        if (!response.ok) {
+          if (response.status === 404) {
+            return [];
+          }
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
 
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      const indexData = parseBinaryIndex(buffer);
-      let shotList = indexToShotList(indexData);
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const indexData = parseBinaryIndex(buffer);
+        let shotList = indexToShotList(indexData);
 
-      if (offset !== undefined && offset > 0) {
-        shotList = shotList.slice(offset);
-      }
-      if (limit !== undefined && limit > 0) {
-        shotList = shotList.slice(0, limit);
-      }
+        if (offset !== undefined && offset > 0) {
+          shotList = shotList.slice(offset);
+        }
+        if (limit !== undefined && limit > 0) {
+          shotList = shotList.slice(0, limit);
+        }
 
-      return shotList;
-    } catch (error: any) {
-      if (isTimeoutError(error)) {
-        throw new Error(`Request timeout: No response from GaggiMate at ${this.config.host}`);
+        return shotList;
+      } catch (error: any) {
+        if (isTimeoutError(error)) {
+          throw new Error(`Request timeout: No response from GaggiMate at ${this.config.host}`);
+        }
+        throw error;
       }
-      throw error;
-    }
+    });
   }
 
   /** Fetch a specific shot by ID from GaggiMate HTTP API */
   async fetchShot(shotId: string): Promise<ShotData | null> {
+    return this.withHttpExclusion(async () => {
+      try {
+        const paddedId = shotId.padStart(6, "0");
+        const url = `${this.httpProtocol}://${this.config.host}/api/history/${paddedId}.slog`;
+        const response = await fetch(url, {
+          method: "GET",
+          headers: { Accept: "application/octet-stream" },
+          signal: AbortSignal.timeout(this.config.requestTimeout),
+        });
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            return null;
+          }
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        return parseBinaryShot(buffer, shotId);
+      } catch (error: any) {
+        if (isTimeoutError(error)) {
+          throw new Error(`Request timeout: No response from GaggiMate at ${this.config.host}`);
+        }
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Fetch shot metadata list via WebSocket req:history:list command.
+   * This is the graceful-degradation path when the binary .slog HTTP fetch fails —
+   * it returns lightweight metadata (id, timestamp, profile, duration, volume,
+   * sampleCount) without needing the full binary shot file.
+   */
+  async fetchShotMetadata(): Promise<ShotMetadataEntry[]> {
     try {
-      const paddedId = shotId.padStart(6, "0");
-      const url = `${this.httpProtocol}://${this.config.host}/api/history/${paddedId}.slog`;
-      const response = await fetch(url, {
-        method: "GET",
-        headers: { Accept: "application/octet-stream" },
-        signal: AbortSignal.timeout(this.config.requestTimeout),
+      const raw = await this.sendWsRequest<any[]>({
+        reqType: "req:history:list",
+        resType: "res:history:list",
+        payload: {},
+        extractResult: (res) => res.shots ?? res.entries ?? [],
+        errorPrefix: "Failed to fetch shot metadata",
       });
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          return null;
-        }
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      return parseBinaryShot(buffer, shotId);
-    } catch (error: any) {
-      if (isTimeoutError(error)) {
-        throw new Error(`Request timeout: No response from GaggiMate at ${this.config.host}`);
-      }
-      throw error;
+      return (raw ?? []).map((entry: any): ShotMetadataEntry => ({
+        id: typeof entry.id === "number" ? entry.id : parseInt(String(entry.id), 10),
+        timestamp: entry.timestamp ?? entry.ts ?? undefined,
+        profile: entry.profile ?? entry.profileLabel ?? undefined,
+        duration: entry.duration ?? entry.movingTime ?? undefined,
+        volume: entry.volume ?? undefined,
+        sampleCount: entry.sampleCount ?? entry.sample_count ?? undefined,
+      }));
+    } catch {
+      return [];
     }
   }
 }

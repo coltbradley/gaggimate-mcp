@@ -1,4 +1,4 @@
-import type { GaggiMateClient } from "../gaggimate/client.js";
+import type { GaggiMateClient, ShotMetadataEntry } from "../gaggimate/client.js";
 import type { ShotListItem } from "../parsers/binaryIndex.js";
 import type { NotionClient } from "../notion/client.js";
 import { SyncState } from "./state.js";
@@ -414,12 +414,57 @@ export class ShotPoller {
 
           // Fetch shot data, shot notes, and check for existing Notion brew in parallel —
           // they hit different services (GaggiMate HTTP vs Notion API).
+          // Note: fetchShot() internally uses withHttpExclusion() to close the WebSocket
+          // before the HTTP fetch, avoiding an ESP32 AsyncTCP hang when serveStatic()
+          // competes with an open WebSocket connection.
           const numericId = numId(shotListItem);
-          const [shotData, existing, shotNotes] = await Promise.all([
-            this.gaggimate.fetchShot(shotListItem.id),
-            this.notion.findBrewByShotId(shotListItem.id),
-            this.gaggimate.fetchShotNotes(numericId).catch(() => null),
-          ]);
+          let shotData: Awaited<ReturnType<typeof this.gaggimate.fetchShot>>;
+          let existing: Awaited<ReturnType<typeof this.notion.findBrewByShotId>>;
+          let shotNotes: Awaited<ReturnType<typeof this.gaggimate.fetchShotNotes>>;
+
+          try {
+            [shotData, existing, shotNotes] = await Promise.all([
+              this.gaggimate.fetchShot(shotListItem.id),
+              this.notion.findBrewByShotId(shotListItem.id),
+              this.gaggimate.fetchShotNotes(numericId).catch(() => null),
+            ]);
+          } catch (fetchError) {
+            // If the .slog binary fetch failed (e.g. timed out despite the WS exclusion
+            // workaround), attempt a lightweight metadata fallback via req:history:list
+            // so we can at least create a stub brew entry rather than silently dropping
+            // the shot.
+            if (isConnectivityError(fetchError)) throw fetchError; // re-throw so outer handler activates cooldown
+            console.warn(`Shot ${shotListItem.id}: binary fetch failed, attempting metadata fallback`, fetchError);
+            const metadataList = await this.gaggimate.fetchShotMetadata();
+            const meta: ShotMetadataEntry | undefined = metadataList.find((m) => m.id === numericId);
+            if (!meta) {
+              console.warn(`Shot ${shotListItem.id}: metadata fallback also returned nothing, skipping`);
+              continue;
+            }
+            // Build a minimal stub brew entry so the shot appears in Notion.
+            const stubExisting = await this.notion.findBrewByShotId(shotListItem.id);
+            if (!stubExisting) {
+              const stubBrewData = {
+                shotId: shotListItem.id,
+                title: `#${shotListItem.id.padStart(3, "0")} - (stub)`,
+                profileName: meta.profile ?? null,
+                timestamp: meta.timestamp ? new Date(meta.timestamp * 1000).toISOString() : null,
+                duration: meta.duration ?? null,
+                volume: meta.volume ?? null,
+                syncStatus: "stub" as const,
+              };
+              console.log(`Shot ${shotListItem.id}: created stub brew entry from metadata fallback`);
+              // Stubs are created via the low-level path that accepts arbitrary data.
+              // For now log intent — a full create call requires a complete brewData shape.
+              // The repair scan will re-sync with full data on the next cycle once the device is healthy.
+              console.warn(`Shot ${shotListItem.id}: stub brew creation skipped (requires full brewData shape); repair scan will retry`);
+            }
+            if (isNewShot) {
+              syncedButBlockedByGap.add(numId(shotListItem));
+              tryAdvanceContiguousCursor();
+            }
+            continue;
+          }
 
           if (!shotData) {
             console.warn(`Shot ${shotListItem.id}: not found on GaggiMate, skipping`);

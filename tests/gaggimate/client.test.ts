@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import WebSocket from "ws";
 import { GaggiMateClient } from "../../src/gaggimate/client.js";
 
 type Deferred = {
@@ -296,6 +297,128 @@ describe("GaggiMateClient WebSocket request flow", () => {
 
     expect(fakeWs.send).toHaveBeenCalledTimes(2);
     expect(sentTypes).toEqual(["req:profiles:favorite", "req:profiles:unfavorite"]);
+  });
+
+  it("withHttpExclusion closes an open WebSocket before executing the function", async () => {
+    vi.useFakeTimers();
+    const client = createClient() as any;
+
+    const closeSpy = vi.fn();
+    const fakeWs = {
+      readyState: WebSocket.OPEN,
+      close: closeSpy,
+    };
+    client.sharedWs = fakeWs;
+
+    let executedAfterClose = false;
+    const fn = vi.fn(async () => {
+      executedAfterClose = closeSpy.mock.calls.length > 0;
+      return "result";
+    });
+
+    const resultPromise = client.withHttpExclusion(fn);
+    // Advance past the 500ms close delay
+    await vi.advanceTimersByTimeAsync(600);
+    const result = await resultPromise;
+
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(executedAfterClose).toBe(true);
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(result).toBe("result");
+
+    vi.useRealTimers();
+  });
+
+  it("withHttpExclusion executes immediately when no WebSocket is open", async () => {
+    const client = createClient() as any;
+    expect(client.sharedWs).toBeNull();
+
+    const fn = vi.fn(async () => "no-ws-result");
+    const result = await client.withHttpExclusion(fn);
+
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(result).toBe("no-ws-result");
+  });
+
+  it("withHttpExclusion skips close when WebSocket is not OPEN", async () => {
+    const client = createClient() as any;
+
+    const closeSpy = vi.fn();
+    const fakeWs = {
+      readyState: WebSocket.CONNECTING,
+      close: closeSpy,
+    };
+    client.sharedWs = fakeWs;
+
+    const fn = vi.fn(async () => "connecting-result");
+    const result = await client.withHttpExclusion(fn);
+
+    expect(closeSpy).not.toHaveBeenCalled();
+    expect(result).toBe("connecting-result");
+  });
+
+  it("fetchShotMetadata parses res:history:list shots array into ShotMetadataEntry objects", async () => {
+    const client = createClient() as any;
+    const fakeWs = {
+      send: vi.fn((payload: string, cb?: (error?: Error) => void) => {
+        cb?.();
+        const parsed = JSON.parse(payload);
+        client.handleSharedMessage(JSON.stringify({
+          tp: "res:history:list",
+          rid: parsed.rid,
+          shots: [
+            { id: 42, timestamp: 1700000000, profile: "Classic Espresso", duration: 28, volume: 36, sampleCount: 120 },
+            { id: 43, ts: 1700000060, profileLabel: "Ristretto" },
+          ],
+        }));
+      }),
+    };
+    client.getOrCreateWs = vi.fn().mockResolvedValue(fakeWs);
+
+    const metadata = await client.fetchShotMetadata();
+
+    expect(metadata).toHaveLength(2);
+    expect(metadata[0]).toMatchObject({
+      id: 42,
+      timestamp: 1700000000,
+      profile: "Classic Espresso",
+      duration: 28,
+      volume: 36,
+      sampleCount: 120,
+    });
+    expect(metadata[1]).toMatchObject({
+      id: 43,
+      timestamp: 1700000060,
+      profile: "Ristretto",
+    });
+  });
+
+  it("fetchShotMetadata returns empty array on WS error", async () => {
+    const client = createClient() as any;
+    client.getOrCreateWs = vi.fn().mockRejectedValue(new Error("connection refused"));
+
+    const metadata = await client.fetchShotMetadata();
+    expect(metadata).toEqual([]);
+  });
+
+  it("fetchShotMetadata handles entries array field name as fallback", async () => {
+    const client = createClient() as any;
+    const fakeWs = {
+      send: vi.fn((payload: string, cb?: (error?: Error) => void) => {
+        cb?.();
+        const parsed = JSON.parse(payload);
+        client.handleSharedMessage(JSON.stringify({
+          tp: "res:history:list",
+          rid: parsed.rid,
+          entries: [{ id: 7, timestamp: 1700000100 }],
+        }));
+      }),
+    };
+    client.getOrCreateWs = vi.fn().mockResolvedValue(fakeWs);
+
+    const metadata = await client.fetchShotMetadata();
+    expect(metadata).toHaveLength(1);
+    expect(metadata[0].id).toBe(7);
   });
 
   it("keeps completed-command dedupe cache bounded", async () => {
