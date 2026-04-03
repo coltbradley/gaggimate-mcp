@@ -21,16 +21,20 @@ src/
     mappers.ts                  — Shot data → Notion properties conversion
   http/
     server.ts                   — Express app setup
+    middleware/auth.ts          — Bearer token auth (optional, via API_TOKEN)
     routes/health.ts            — GET /health
     routes/webhook.ts           — POST /webhook/notion
     routes/status.ts            — GET /status (diagnostics + sync state)
     routes/logs.ts              — GET /logs (recent log lines)
     routes/device.ts            — GET /device/* (proxy to GaggiMate)
+    routes/shots.ts             — GET /shots/latest, /shots/new, /shots/:id
+    controlPanelHtml.ts         — Control panel HTML template
   sync/
     shotPoller.ts               — Background loop: GaggiMate → Notion shot sync
     profileReconciler.ts        — Background loop: Notion ↔ GaggiMate profile sync
     profilePush.ts              — Shared profile push logic (webhook + reconciler)
     profilePreferenceSync.ts    — Syncs favorite/selected checkboxes to device
+    shotCache.ts                — Local JSON file cache for shots
     state.ts                    — Sync state persistence (JSON file)
   analysis/
     shotAnalysis.ts             — DDSA: per-phase pressure/flow/temp/resistance metrics
@@ -46,7 +50,12 @@ src/
     shotTransformer.ts          — Binary → AI-friendly JSON (preserved from upstream)
   utils/
     connectivity.ts             — Classifies connectivity errors (EHOSTUNREACH etc.)
+    logBuffer.ts                — In-memory log ring buffer for /logs endpoint
     text.ts                     — Mojibake repair for profile label comparison
+  visualization/
+    brewChart.ts                — SVG chart generation for brew pressure/flow curves
+    profileChart.ts             — SVG chart for extraction profiles
+    chartTheme.ts               — Chart styling constants
 tests/
   sync/
     shotPoller.test.ts          — Shot poller unit tests (vitest)
@@ -73,6 +82,7 @@ curl localhost:3000/health  # Health check
 | `NOTION_PROFILES_DB_ID` | — | Notion profiles database ID (required) |
 | `NOTION_BEANS_DB_ID` | — | Notion beans database ID (optional) |
 | `WEBHOOK_SECRET` | — | Notion webhook verification token |
+| `API_TOKEN` | — | Bearer token for HTTP/MCP auth (optional; if unset, no auth) |
 | `SYNC_INTERVAL_MS` | `300000` | Fallback shot poll interval (ms); primary trigger is `evt:status` WebSocket event |
 | `RECENT_SHOT_LOOKBACK_COUNT` | `5` | Lookback window for rehydrating incomplete shots |
 | `BREW_REPAIR_INTERVAL_MS` | `3600000` | How often to scan for stale/missing brew data (1 hour) |
@@ -88,6 +98,7 @@ curl localhost:3000/health  # Health check
 | `BREW_TITLE_TIMEZONE` | `America/Los_Angeles` | Timezone for brew title date strings |
 | `HTTP_PORT` | `3000` | HTTP server port |
 | `DATA_DIR` | `./data` | Persistent data directory |
+| `SHOT_RETENTION_DAYS` | `7` | Days to retain local shot cache JSON files |
 
 ## GaggiMate API
 - **Shot history index:** `GET /api/history/index.bin` — binary format, `SHOT_INDEX_ENTRY_SIZE=128` bytes/entry
@@ -99,7 +110,7 @@ curl localhost:3000/health  # Health check
 
 ## Shot Sync Flow (ShotPoller)
 1. **Event-driven trigger:** Subscribes to `evt:status` WebSocket events from the device. When brew state transitions from `"brewing"` to any other state, a sync is triggered after a 2-second delay (shot file settling time)
-2. **Fallback polling:** A `setInterval` at `SYNC_INTERVAL_MS` (default 30s) runs as backup for cases where WebSocket events are missed or the connection is not yet established
+2. **Fallback polling:** A `setInterval` at `SYNC_INTERVAL_MS` (default 5 min / 300000ms) runs as backup for cases where WebSocket events are missed or the connection is not yet established
 3. **Connectivity cooldown:** Any connectivity error activates 3-minute cooldown; polls are skipped entirely until it expires, then reset on first successful poll
 4. **Hourly repair scan** (`repairStaleBrews`): Checks last 50 synced shots for stale Shot JSON (`sample_count === 0`) or missing Brew Profile chart images; re-syncs only what's missing. Batched 3 at a time to avoid starving shot ingest
 5. **New shots** (`id > lastSyncedShotId`): Processed oldest-first from `GET /api/history/index.bin`; stops at first incomplete shot
@@ -112,7 +123,7 @@ curl localhost:3000/health  # Health check
 12. **State persistence:** `lastSyncedShotId`, `lastSyncTime`, `totalShotsSynced` → `/app/data/sync-state.json` after each new sync
 
 ## Profile Sync Flow (ProfileReconciler)
-Runs every 30s. Fetches device profiles and Notion profiles in parallel, then:
+Runs every 60s. Fetches device profiles and Notion profiles in parallel, then:
 
 **Notion → Device (by status):**
 - `Draft` — ignored; user hasn't queued it yet
@@ -254,6 +265,16 @@ The device supports per-shot text notes stored on the GaggiMate. The bridge:
 | `Channeling` | checkbox | Observed channeling |
 | `Beans` | relation | Link to Beans DB |
 | `Profile` | relation | Link to Profiles DB |
+
+## Shots REST API
+
+| Endpoint | Description |
+|---|---|
+| `GET /shots/latest` | Most recent cached shot JSON |
+| `GET /shots/new?since=<id>` | All shots with ID > since |
+| `GET /shots/:id` | Specific shot by ID |
+
+Served from local file cache (`data/shots/*.json`). Requires `API_TOKEN` Bearer auth if configured.
 
 ## Debug Endpoints
 

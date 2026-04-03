@@ -1,7 +1,7 @@
 # GaggiMate Notion Bridge v2 — Rearchitecture Design
 
 **Date:** 2026-04-02
-**Status:** Approved
+**Status:** Completed (merged 2026-04-02)
 **Approach:** Evolve current architecture (Approach A — single Docker container on TrueNAS)
 
 ## Problem Statement
