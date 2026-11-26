@@ -25,6 +25,18 @@ function readCookie(header: string | undefined, name: string): string | null {
   return null;
 }
 
+function isSameOrigin(req: Request): boolean {
+  if (req.headers["sec-fetch-site"] === "same-origin") return true;
+  const origin = req.headers.origin;
+  const host = req.headers.host;
+  if (typeof origin !== "string" || !host) return false;
+  try {
+    return new URL(origin).host === host;
+  } catch {
+    return false;
+  }
+}
+
 export const TOKEN_UNSET_MESSAGE =
   "API_TOKEN is not set on the server, so every protected route is closed. Set API_TOKEN and restart.";
 
@@ -57,6 +69,12 @@ export function createAuthMiddleware(token: string | (() => string | undefined))
     } else {
       const cookie = readCookie(req.headers.cookie, SESSION_COOKIE);
       if (cookie && safeEqual(cookie, sessionValue(expected))) {
+        // Cookies ride along on cross-site requests, so writes must prove
+        // they come from this origin (defense in depth beside SameSite=Strict).
+        if (req.method !== "GET" && req.method !== "HEAD" && !isSameOrigin(req)) {
+          res.status(403).json({ error: "FORBIDDEN", message: "Cross-origin request refused" });
+          return;
+        }
         next();
         return;
       }

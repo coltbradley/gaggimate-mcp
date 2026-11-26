@@ -29,7 +29,7 @@ export function createServer(
 
   app.use(express.json({
     verify: (req, _res, buf) => {
-      (req as express.Request & { rawBody?: string }).rawBody = buf.toString("utf8");
+      (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
     },
   }));
 

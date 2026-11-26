@@ -36,13 +36,13 @@ function toHeaderString(value: string | string[] | undefined): string | null {
   return null;
 }
 
-export function buildNotionWebhookSignature(payload: string, verificationToken: string): string {
+export function buildNotionWebhookSignature(payload: string | Buffer, verificationToken: string): string {
   const digest = createHmac("sha256", verificationToken).update(payload).digest("hex");
   return `sha256=${digest}`;
 }
 
 export function isValidNotionWebhookSignature(
-  payload: string,
+  payload: string | Buffer,
   signatureHeader: string | string[] | undefined,
   verificationToken: string,
 ): boolean {
@@ -266,8 +266,9 @@ export function createWebhookRouter(gaggimate: GaggiMateClient, notion: NotionCl
         return;
       }
 
-      const rawBody = typeof (req as any).rawBody === "string"
-        ? (req as any).rawBody
+      const captured = (req as any).rawBody;
+      const rawBody: string | Buffer = typeof captured === "string" || Buffer.isBuffer(captured)
+        ? captured
         : JSON.stringify(req.body ?? {});
       const signature = req.headers["x-notion-signature"];
       if (!isValidNotionWebhookSignature(rawBody, signature, webhookVerificationToken)) {

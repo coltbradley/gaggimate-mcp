@@ -62,7 +62,8 @@ By default the bridge listens on `127.0.0.1` only. Why: it holds the Notion and 
 - Every route except `GET /health` needs `API_TOKEN`, as `Authorization: Bearer <token>` (MCP clients, scripts) or as the session cookie below. If `API_TOKEN` is unset, protected routes answer 401 with a message saying so, and the server refuses to start on any non-loopback `HTTP_HOST`.
 - Control panel: open `/control`. Without a session you are redirected to `/login`; enter the token once. The server sets an HttpOnly, `SameSite=Strict` cookie (Secure when proxied over https) that holds a keyed hash of the token, not the token. The panel's own calls to `/api/device/*` then work without a header. Scripts keep using the bearer header.
 - Remote access: Desk's deploy publishes the loopback port to the tailnet with `tailscale serve` (for example `tailscale serve --bg --https=443 http://127.0.0.1:3000`), so only tailnet devices reach it, over https.
-- Docker with a published port needs `HTTP_HOST=0.0.0.0` inside the container; publish it on the host loopback (`127.0.0.1:3000:3000`) and set `API_TOKEN`.
+- The TrueNAS deploy (`docker-compose.truenas.yml`) uses `network_mode: host` and the default `HTTP_HOST=127.0.0.1`.
+- Docker with a published port (bridge networking) needs `HTTP_HOST=0.0.0.0` inside the container; publish it on the host loopback (`127.0.0.1:3000:3000`) and set `API_TOKEN`.
 - There is no login rate limit; the token should be long and random, and access stays on the tailnet.
 
 ## Environment Variables
@@ -105,7 +106,7 @@ Deprecated and ignored:
 ## Security
 
 - **Never commit API keys.** Use `.env` (gitignored) or environment variables. See [Notion's API key best practices](https://developers.notion.com/guides/resources/best-practices-for-handling-api-keys).
-- The webhook is off unless `WEBHOOK_SECRET` is set to Notion's **raw verification token** (not `sha256=...`). Signatures are verified against the raw body (`X-Notion-Signature: sha256=<hex>`, constant-time); malformed or non-ASCII headers get 401. The bridge no longer adopts a token sent in a verification request, so copy the token into `WEBHOOK_SECRET` and restart. Profile reconcile keeps working without the webhook.
+- The webhook is off unless `WEBHOOK_SECRET` is set to Notion's **raw verification token** (not `sha256=...`). Signatures are verified against the raw body (`X-Notion-Signature: sha256=<hex>`, constant-time); malformed or non-ASCII headers get 401. The bridge no longer adopts a token sent in a verification request, so copy the token into `WEBHOOK_SECRET` and restart. Profile reconcile keeps working without the webhook. Without Tailscale Funnel (or another public URL) Notion cannot reach the webhook at all, and the reconcile loop covers profiles. A new Notion webhook subscription sends a verification token once; put it in `WEBHOOK_SECRET` by hand and restart.
 - If a key is compromised: revoke it in [Notion integrations](https://www.notion.so/my-integrations), generate a new one, and rotate in all environments.
 
 ## API

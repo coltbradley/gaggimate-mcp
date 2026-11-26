@@ -131,6 +131,33 @@ describe("server security", () => {
       expect((login.headers["set-cookie"] as unknown as string[])[0]).toMatch(/Secure/i);
     });
 
+    describe("cookie-authenticated writes need a same-origin signal", () => {
+      async function cookieFor(app: any) {
+        const login = await request(app).post("/login").type("form").send({ token: TOKEN });
+        return (login.headers["set-cookie"] as unknown as string[])[0].split(";")[0];
+      }
+      it("rejects a cross-site POST, a foreign Origin, and a POST with neither header", async () => {
+        const app = build();
+        const c = await cookieFor(app);
+        const path = "/api/device/profiles/x/select";
+        expect((await request(app).post(path).set("Cookie", c).set("Sec-Fetch-Site", "cross-site")).status).toBe(403);
+        expect((await request(app).post(path).set("Cookie", c).set("Origin", "https://evil.example")).status).toBe(403);
+        expect((await request(app).post(path).set("Cookie", c)).status).toBe(403);
+      });
+      it("allows same-origin POST by Sec-Fetch-Site or matching Origin, and cookie GETs", async () => {
+        const app = build();
+        const c = await cookieFor(app);
+        const path = "/api/device/profiles/x/select";
+        expect((await request(app).post(path).set("Cookie", c).set("Sec-Fetch-Site", "same-origin")).status).not.toBe(403);
+        expect((await request(app).post(path).set("Cookie", c).set("Host", "nas.ts.net").set("Origin", "https://nas.ts.net")).status).not.toBe(403);
+        expect((await request(app).get("/logs").set("Cookie", c)).status).toBe(200);
+      });
+      it("does not apply to Bearer requests", async () => {
+        const res = await request(build()).post("/api/device/profiles/x/select").set("Authorization", `Bearer ${TOKEN}`);
+        expect(res.status).not.toBe(403);
+      });
+    });
+
     it("rejects a forged cookie", async () => {
       const res = await request(build()).get("/logs").set("Cookie", "gm_session=deadbeef");
       expect(res.status).toBe(401);
@@ -156,6 +183,21 @@ describe("server security", () => {
         .set("X-Notion-Signature", buildNotionWebhookSignature(raw, "whsec"))
         .send(raw);
       expect(signed.status).toBe(200);
+    });
+
+    it("verifies the HMAC over the exact bytes, so non-UTF-8 bodies signed over a decoded copy are refused", async () => {
+      (config as any).webhook.secret = "whsec";
+      const app = build();
+      const bytes = Buffer.concat([
+        Buffer.from('{"type":"x","entity":{"id":"p"},"note":"'), Buffer.from([0xff, 0xfe]), Buffer.from('"}'),
+      ]);
+      const viaString = buildNotionWebhookSignature(bytes.toString("utf8"), "whsec");
+      const bad = await request(app).post("/webhook/notion").set("Content-Type", "application/json")
+        .set("X-Notion-Signature", viaString).serialize((b: any) => b).send(bytes);
+      expect(bad.status).toBe(401);
+      const good = await request(app).post("/webhook/notion").set("Content-Type", "application/json")
+        .set("X-Notion-Signature", buildNotionWebhookSignature(bytes, "whsec")).serialize((b: any) => b).send(bytes);
+      expect(good.status).toBe(200);
     });
 
     it("rejects malformed and non-ASCII signature headers with 401", async () => {
