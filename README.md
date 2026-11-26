@@ -26,7 +26,7 @@ GaggiMate (ESP32) ←→ Bridge Service (Docker) ←→ Notion (Cloud)
 
 - **Bridge** runs on TrueNAS SCALE (or any Docker host on the LAN)
 - **Notion** is the entire UI — browse shots, tag beans, ask Notion AI for dial-in advice
-- **Tailscale Funnel** exposes the webhook endpoint for low-latency profile push
+- **Webhook** (optional) gives low-latency profile push; the reconcile loop covers profiles without it
 
 ## Runtime Priorities
 
@@ -55,6 +55,17 @@ npm run dev
 docker compose up --build
 ```
 
+## Network and access
+
+By default the bridge listens on `127.0.0.1` only. Why: it holds the Notion and device credentials and can change the machine's profiles, so a LAN-wide listener with no token was an open door.
+
+- Every route except `GET /health` needs `API_TOKEN`, as `Authorization: Bearer <token>` (MCP clients, scripts) or as the session cookie below. If `API_TOKEN` is unset, protected routes answer 401 with a message saying so, and the server refuses to start on any non-loopback `HTTP_HOST`.
+- Control panel: open `/control`. Without a session you are redirected to `/login`; enter the token once. The server sets an HttpOnly, `SameSite=Strict` cookie (Secure when proxied over https) that holds a keyed hash of the token, not the token. The panel's own calls to `/api/device/*` then work without a header. Scripts keep using the bearer header.
+- Remote access: Desk's deploy publishes the loopback port to the tailnet with `tailscale serve` (for example `tailscale serve --bg --https=443 http://127.0.0.1:3000`), so only tailnet devices reach it, over https.
+- The TrueNAS deploy (`docker-compose.truenas.yml`) uses `network_mode: host` and the default `HTTP_HOST=127.0.0.1`.
+- Docker with a published port (bridge networking) needs `HTTP_HOST=0.0.0.0` inside the container; publish it on the host loopback (`127.0.0.1:3000:3000`) and set `API_TOKEN`.
+- There is no login rate limit; the token should be long and random, and access stays on the tailnet.
+
 ## Environment Variables
 
 Copy `.env.example` to `.env` and fill in your values. Never commit `.env` — it contains secrets.
@@ -68,7 +79,10 @@ Copy `.env.example` to `.env` and fill in your values. Never commit `.env` — i
 | `NOTION_BREWS_DB_ID` | Notion Brews database ID | required |
 | `NOTION_PROFILES_DB_ID` | Notion Profiles database ID | required |
 | `NOTION_BEANS_DB_ID` | Notion Beans database ID | optional |
-| `WEBHOOK_SECRET` | Notion webhook verification token (raw token, not `sha256=...`) — if set, signatures are validated | optional |
+| `HTTP_HOST` | Interface to listen on. Loopback by default so the bridge is not reachable from the LAN; see "Network and access" | `127.0.0.1` |
+| `HTTP_PORT` | HTTP port | `3000` |
+| `API_TOKEN` | Secret required on every route except `GET /health`. Unset means those routes answer 401 and a non-loopback `HTTP_HOST` refuses to start | required in practice |
+| `WEBHOOK_SECRET` | Notion webhook verification token (raw token, not `sha256=...`). `POST /webhook/notion` exists only when this is set; every request must carry a valid HMAC signature | optional |
 | `SYNC_INTERVAL_MS` | Shot polling interval (ms) | `30000` |
 | `RECENT_SHOT_LOOKBACK_COUNT` | Recent shots to re-check each poll | `5` |
 | `BREW_REPAIR_INTERVAL_MS` | How often to scan for stale/missing brew data (ms) | `3600000` (1h) |
@@ -92,13 +106,14 @@ Deprecated and ignored:
 ## Security
 
 - **Never commit API keys.** Use `.env` (gitignored) or environment variables. See [Notion's API key best practices](https://developers.notion.com/guides/resources/best-practices-for-handling-api-keys).
-- If webhook endpoint is publicly reachable (for example via Funnel), set `WEBHOOK_SECRET` to Notion's **raw verification token** (not `sha256=...`) so webhook signatures are validated.
+- The webhook is off unless `WEBHOOK_SECRET` is set to Notion's **raw verification token** (not `sha256=...`). Signatures are verified against the raw body (`X-Notion-Signature: sha256=<hex>`, constant-time); malformed or non-ASCII headers get 401. The bridge no longer adopts a token sent in a verification request, so copy the token into `WEBHOOK_SECRET` and restart. Profile reconcile keeps working without the webhook. Without Tailscale Funnel (or another public URL) Notion cannot reach the webhook at all, and the reconcile loop covers profiles. A new Notion webhook subscription sends a verification token once; put it in `WEBHOOK_SECRET` by hand and restart.
 - If a key is compromised: revoke it in [Notion integrations](https://www.notion.so/my-integrations), generate a new one, and rotate in all environments.
 
 ## API
 
-- `GET /health` — Service status, GaggiMate/Notion connectivity, WS queue diagnostics, last sync info, webhook signature verification state
-- `POST /webhook/notion` — Receives Notion webhooks for profile push
+- `GET /health` — Public, no token. Status, version, uptime, GaggiMate and Notion reachability, and `auth.tokenSet` / `webhook.secretSet` as booleans. No hosts, IDs or secrets.
+- `POST /webhook/notion` — Receives Notion webhooks for profile push (only exists when `WEBHOOK_SECRET` is set; signature auth, no bearer token)
+- `GET /login`, `POST /login` — Trade the API token for the control-panel cookie
 - `GET /control` — **Device control panel** — switch profiles and manage favorites when the GaggiMate web portal isn't accessible (e.g. remote via Tailscale)
 - `GET /api/device/profiles` — List device profiles (or Notion fallback profiles if device is offline). Response includes `source`: `device`, `device+notion`, or `notion-fallback`.
 - `POST /api/device/profiles/:id/select` — Select a profile (make it active)

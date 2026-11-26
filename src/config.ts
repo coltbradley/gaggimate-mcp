@@ -63,7 +63,7 @@ export const config = {
     secret: parseOptionalSecret(process.env.WEBHOOK_SECRET),
   },
   api: {
-    token: process.env.API_TOKEN || "",
+    token: parseOptionalSecret(process.env.API_TOKEN),
   },
   sync: {
     intervalMs: parseEnvNumber(process.env.SYNC_INTERVAL_MS, 300000),
@@ -89,6 +89,7 @@ export const config = {
     brewTitleTimeZone: process.env.BREW_TITLE_TIMEZONE || process.env.TZ || "America/Los_Angeles",
   },
   http: {
+    host: process.env.HTTP_HOST?.trim() || "127.0.0.1",
     port: parseEnvNumber(process.env.HTTP_PORT, 3000),
   },
   data: {

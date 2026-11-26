@@ -21,7 +21,7 @@ src/
     mappers.ts                  — Shot data → Notion properties conversion
   http/
     server.ts                   — Express app setup
-    middleware/auth.ts          — Bearer token auth (optional, via API_TOKEN)
+    middleware/auth.ts          — Bearer/cookie token auth (required; fails closed when API_TOKEN is unset)
     routes/health.ts            — GET /health
     routes/webhook.ts           — POST /webhook/notion
     routes/status.ts            — GET /status (diagnostics + sync state)
@@ -81,8 +81,8 @@ curl localhost:3000/health  # Health check
 | `NOTION_BREWS_DB_ID` | — | Notion brews database ID (required) |
 | `NOTION_PROFILES_DB_ID` | — | Notion profiles database ID (required) |
 | `NOTION_BEANS_DB_ID` | — | Notion beans database ID (optional) |
-| `WEBHOOK_SECRET` | — | Notion webhook verification token |
-| `API_TOKEN` | — | Bearer token for HTTP/MCP auth (optional; if unset, no auth) |
+| `WEBHOOK_SECRET` | — | Notion webhook verification token; `POST /webhook/notion` is off unless set |
+| `API_TOKEN` | — | Required on every route except `GET /health` (Bearer header or `/login` cookie). Unset: protected routes answer 401 and non-loopback `HTTP_HOST` refuses to start |
 | `SYNC_INTERVAL_MS` | `300000` | Fallback shot poll interval (ms); primary trigger is `evt:status` WebSocket event |
 | `RECENT_SHOT_LOOKBACK_COUNT` | `5` | Lookback window for rehydrating incomplete shots |
 | `BREW_REPAIR_INTERVAL_MS` | `3600000` | How often to scan for stale/missing brew data (1 hour) |
@@ -96,6 +96,7 @@ curl localhost:3000/health  # Health check
 | `PROFILE_IMPORT_UNMATCHED_DEVICE_PROFILES` | `false` | Import device-only profiles into Notion as Draft on each reconcile cycle |
 | `IMPORT_MISSING_PROFILES_FROM_SHOTS` | `false` | Auto-import profiles referenced in shots that don't yet exist in Notion |
 | `BREW_TITLE_TIMEZONE` | `America/Los_Angeles` | Timezone for brew title date strings |
+| `HTTP_HOST` | `127.0.0.1` | Listen interface; publish to the tailnet with `tailscale serve` |
 | `HTTP_PORT` | `3000` | HTTP server port |
 | `DATA_DIR` | `./data` | Persistent data directory |
 | `SHOT_RETENTION_DAYS` | `7` | Days to retain local shot cache JSON files |
@@ -154,7 +155,7 @@ Called by both `saveProfile` (before sending to device) and all Notion JSON writ
 ## Webhook Flow
 `POST /webhook/notion`:
 1. Responds immediately with `200 { ok: true }` before any device calls (prevents Notion timeout)
-2. Verifies HMAC-SHA256 signature against `WEBHOOK_SECRET` if configured (timing-safe comparison)
+2. Route exists only when `WEBHOOK_SECRET` is set; verifies HMAC-SHA256 of the raw body (strict `sha256=<64 hex>` header, timing-safe comparison)
 3. Filters to profile DB pages only (using `parent.database_id` from payload when available)
 4. Background: fetches page data, checks `pushStatus`:
    - `Queued` → calls `pushProfileToGaggiMate` (shared with reconciler)
@@ -274,7 +275,7 @@ The device supports per-shot text notes stored on the GaggiMate. The bridge:
 | `GET /shots/new?since=<id>` | All shots with ID > since |
 | `GET /shots/:id` | Specific shot by ID |
 
-Served from local file cache (`data/shots/*.json`). Requires `API_TOKEN` Bearer auth if configured.
+Served from local file cache (`data/shots/*.json`). Requires `API_TOKEN`.
 
 ## Debug Endpoints
 

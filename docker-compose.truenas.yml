@@ -22,7 +22,9 @@
 # Optional:
 #   GAGGIMATE_PROTOCOL    - ws (default) or wss
 #   REQUEST_TIMEOUT       - device HTTP/WS request timeout in ms (default: 5000)
-#   WEBHOOK_SECRET        - Notion webhook verification token (raw token, not sha256 signature)
+#   API_TOKEN             - required; every route except /health needs it
+#   HTTP_HOST             - leave at default 127.0.0.1 (this file uses network_mode: host); 0.0.0.0 only for bridge networking with a loopback-published port
+#   WEBHOOK_SECRET        - webhook is off unless set. Notion webhook verification token (raw token, not sha256 signature)
 #   SYNC_INTERVAL_MS      - Shot polling interval in ms (default: 30000)
 #   PROFILE_RECONCILE_DELETE_ENABLED - true (default) or false
 #   PROFILE_RECONCILE_DELETE_LIMIT_PER_RUN - max deletes/cycle (default: 3)
@@ -42,8 +44,12 @@ services:
   gaggimate-bridge:
     image: ghcr.io/graphite-productions/gaggimate-bridge:latest
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    # Host networking: the bridge listens on the NAS loopback (HTTP_HOST default
+    # 127.0.0.1) and Desk publishes it to the tailnet with `tailscale serve`.
+    # Do not combine with `ports:`. If you switch to bridge networking and a
+    # published port, set HTTP_HOST=0.0.0.0 and publish on 127.0.0.1 only, or
+    # the server binds the container's own loopback and is unreachable.
+    network_mode: host
     volumes:
       - gaggimate-data:/app/data
     healthcheck:
