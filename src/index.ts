@@ -8,6 +8,7 @@ import { createServer } from "./http/server.js";
 import { ShotPoller } from "./sync/shotPoller.js";
 import { ProfileReconciler } from "./sync/profileReconciler.js";
 import { NotionClient } from "./notion/client.js";
+import { assertSafeBind } from "./http/bind.js";
 
 function validateConfig(): void {
   const errors: string[] = [];
@@ -36,8 +37,17 @@ function validateConfig(): void {
   if (!config.notion.beansDbId) {
     console.warn("NOTION_BEANS_DB_ID is not set — bean queries will fail");
   }
+  try {
+    assertSafeBind(config.http.host, config.api.token);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
+  }
+  if (!config.api.token) {
+    console.warn("API_TOKEN is not set — every route except GET /health answers 401 until it is set");
+  }
   if (!config.webhook.secret) {
-    console.warn("WEBHOOK_SECRET is not set — webhook signature verification is disabled");
+    console.warn("WEBHOOK_SECRET is not set — POST /webhook/notion is disabled (profile reconcile still runs)");
   } else if (/^sha256=[a-f0-9]{64}$/i.test(config.webhook.secret)) {
     console.warn(
       "WEBHOOK_SECRET appears to be a signature digest (sha256=...) instead of Notion's verification token. " +
@@ -74,8 +84,9 @@ async function main() {
   console.log("GaggiMate Notion Bridge starting...");
   console.log(`  Version: ${version}`);
   console.log(`  GaggiMate: ${config.gaggimate.protocol}://${config.gaggimate.host}`);
-  console.log(`  HTTP port: ${config.http.port}`);
-  console.log(`  Webhook signature verification: ${config.webhook.secret ? "enabled" : "disabled"}`);
+  console.log(`  HTTP listen: ${config.http.host}:${config.http.port}`);
+  console.log(`  API token: ${config.api.token ? "set" : "NOT SET (protected routes answer 401)"}`);
+  console.log(`  Webhook: ${config.webhook.secret ? "enabled (signed)" : "disabled"}`);
   console.log(`  Shot sync interval: ${config.sync.intervalMs}ms`);
   console.log(`  Import missing profiles during shot sync: ${config.sync.importMissingProfilesFromShots}`);
   console.log(`  Profile reconciler: ${config.sync.profileReconcileEnabled}`);
@@ -112,10 +123,9 @@ async function main() {
   const app = createServer(gaggimate, notion, {
     getSyncState: () => shotPoller.syncState,
     shotCache,
-    apiToken: config.api.token || undefined,
   });
-  app.listen(config.http.port, () => {
-    console.log(`HTTP server listening on port ${config.http.port}`);
+  app.listen(config.http.port, config.http.host, () => {
+    console.log(`HTTP server listening on ${config.http.host}:${config.http.port}`);
   });
 
   // Start shot poller

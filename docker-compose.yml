@@ -6,7 +6,12 @@ services:
     container_name: gaggimate-bridge
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      # Published on the host loopback only; reach it over the tailnet with `tailscale serve`.
+      - "127.0.0.1:3000:3000"
+    environment:
+      # Inside the container the published port needs a non-loopback listener.
+      # Safe because API_TOKEN is mandatory for that (the server refuses to start without it).
+      HTTP_HOST: "0.0.0.0"
     env_file: .env
     volumes:
       - ./data:/app/data

@@ -11,7 +11,7 @@ const gitSha = process.env.GIT_SHA ?? null;
 export function createHealthRouter(
   gaggimate: GaggiMateClient,
   notion: NotionClient,
-  getSyncState: () => SyncState | null,
+  _getSyncState: () => SyncState | null,
 ): Router {
   const router = Router();
 
@@ -21,38 +21,21 @@ export function createHealthRouter(
         gaggimate.isReachable(),
         notion.isConnected(),
       ]);
-      const gaggimateDiagnostics = typeof (gaggimate as any).getConnectionDiagnostics === "function"
-        ? (gaggimate as any).getConnectionDiagnostics()
-        : null;
-
-      const syncState = getSyncState();
-
-      const imageUploadDisabled = notion.imageUploadDisabled;
+      // Public route: booleans and counters only, nothing identifying.
       res.json({
         status: "ok",
         version: buildDate ?? "dev",
         ...(gitSha ? { commit: gitSha.slice(0, 7) } : {}),
-        gaggimate: {
-          host: gaggimate.host,
-          reachable: gaggiReachable,
-          ...(gaggimateDiagnostics ? { websocket: gaggimateDiagnostics } : {}),
-        },
-        notion: {
-          connected: notionConnected,
-          ...(imageUploadDisabled ? { imageUploadDisabled } : {}),
-        },
-        webhook: {
-          signatureVerificationEnabled: config.webhook.secret.length > 0,
-        },
-        lastShotSync: syncState?.lastSyncTime ?? null,
-        lastShotId: syncState?.lastSyncedShotId ?? null,
-        totalShotsSynced: syncState?.totalShotsSynced ?? 0,
+        gaggimate: { reachable: gaggiReachable },
+        notion: { connected: notionConnected },
+        auth: { tokenSet: config.api.token.length > 0 },
+        webhook: { secretSet: config.webhook.secret.length > 0 },
         uptime: Math.floor((Date.now() - startTime) / 1000),
       });
-    } catch (error) {
+    } catch {
       res.status(500).json({
         status: "error",
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: "health check failed",
       });
     }
   });

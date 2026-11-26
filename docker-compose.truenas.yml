@@ -22,7 +22,9 @@
 # Optional:
 #   GAGGIMATE_PROTOCOL    - ws (default) or wss
 #   REQUEST_TIMEOUT       - device HTTP/WS request timeout in ms (default: 5000)
-#   WEBHOOK_SECRET        - Notion webhook verification token (raw token, not sha256 signature)
+#   API_TOKEN             - required; every route except /health needs it
+#   HTTP_HOST             - default 127.0.0.1; with a published port set 0.0.0.0 and publish on loopback only
+#   WEBHOOK_SECRET        - webhook is off unless set. Notion webhook verification token (raw token, not sha256 signature)
 #   SYNC_INTERVAL_MS      - Shot polling interval in ms (default: 30000)
 #   PROFILE_RECONCILE_DELETE_ENABLED - true (default) or false
 #   PROFILE_RECONCILE_DELETE_LIMIT_PER_RUN - max deletes/cycle (default: 3)
@@ -43,7 +45,7 @@ services:
     image: ghcr.io/graphite-productions/gaggimate-bridge:latest
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - gaggimate-data:/app/data
     healthcheck:

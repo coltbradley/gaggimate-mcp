@@ -70,3 +70,18 @@ describe("config", () => {
     }
   });
 });
+
+describe("config http host", () => {
+  it("defaults HTTP_HOST to loopback", async () => {
+    const saved = process.env.HTTP_HOST;
+    delete process.env.HTTP_HOST;
+    vi.resetModules();
+    const { config } = await import("../src/config.js");
+    expect(config.http.host).toBe("127.0.0.1");
+    process.env.HTTP_HOST = " 0.0.0.0 ";
+    vi.resetModules();
+    const again = await import("../src/config.js");
+    expect(again.config.http.host).toBe("0.0.0.0");
+    if (saved === undefined) delete process.env.HTTP_HOST; else process.env.HTTP_HOST = saved;
+  });
+});

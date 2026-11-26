@@ -53,12 +53,8 @@ describe("health route", () => {
       await handler({}, res);
 
       expect(res.statusCode).toBe(200);
-      expect(res.jsonBody.webhook.signatureVerificationEnabled).toBe(true);
-      expect(res.jsonBody.gaggimate.websocket).toEqual({
-        wsQueueDepth: 2,
-        wsPendingResponses: 1,
-        wsState: "open",
-      });
+      expect(res.jsonBody.webhook).toEqual({ secretSet: true });
+      expect(res.jsonBody.gaggimate).toEqual({ reachable: true });
     } finally {
       (config as any).webhook.secret = previousSecret;
     }
@@ -88,9 +84,9 @@ describe("health route", () => {
       await handler({}, res);
 
       expect(res.statusCode).toBe(200);
-      expect(res.jsonBody.webhook.signatureVerificationEnabled).toBe(false);
-      expect(res.jsonBody.lastShotId).toBe("42");
-      expect(res.jsonBody.totalShotsSynced).toBe(100);
+      expect(res.jsonBody.webhook).toEqual({ secretSet: false });
+      expect(res.jsonBody).not.toHaveProperty("lastShotId");
+      expect(JSON.stringify(res.jsonBody)).not.toContain("192.168.1.11");
     } finally {
       (config as any).webhook.secret = previousSecret;
     }

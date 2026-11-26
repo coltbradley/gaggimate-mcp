@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { config } from "../../src/config.js";
 import {
   buildNotionWebhookSignature,
@@ -71,6 +71,15 @@ function createMockNotion() {
 }
 
 describe("webhook route status handling", () => {
+  const savedSecret = config.webhook.secret;
+  beforeAll(() => {
+    (config as any).webhook.secret = "test-verification-token";
+  });
+  afterAll(() => {
+    (config as any).webhook.secret = savedSecret;
+  });
+
+
   it("resolves status actions with status dominance", () => {
     expect(resolveWebhookProfileAction("Queued")).toBe("push_queued");
     expect(resolveWebhookProfileAction("Pushed")).toBe("sync_pushed_preferences");
@@ -454,54 +463,32 @@ describe("webhook route status handling", () => {
     }
   });
 
-  it("applies verification_token at runtime when WEBHOOK_SECRET is a sha256 digest", async () => {
-    const originalSecret = config.webhook.secret;
-    (config as any).webhook.secret = `sha256=${"a".repeat(64)}`;
+  it("does not adopt a verification_token from an unauthenticated request", async () => {
+    const router = createWebhookRouter(createMockGaggimate() as any, createMockNotion() as any);
+    const handler = getNotionWebhookHandler(router);
+    const res = createResponse();
+    await handler({ body: { verification_token: "attacker" }, headers: {}, rawBody: "{}" }, res);
+    const evBody = { type: "page.properties_updated", entity: { type: "page", id: "p" } };
+    const raw = JSON.stringify(evBody);
+    const forged = createResponse();
+    await handler({
+      body: evBody,
+      headers: { "x-notion-signature": buildNotionWebhookSignature(raw, "attacker") },
+      rawBody: raw,
+    }, forged);
+    expect(forged.statusCode).toBe(401);
+  });
+
+  it("answers 404 when no secret is configured", async () => {
+    const prev = config.webhook.secret;
+    (config as any).webhook.secret = "";
     try {
-      const gaggimate = createMockGaggimate();
-      const notion = createMockNotion();
-      notion.getProfilePageData.mockResolvedValue({
-        profileJson: JSON.stringify({ id: "device-runtime", label: "Profile" }),
-        pushStatus: "Pushed",
-        favorite: false,
-        selected: false,
-      });
-      notion.extractProfileIdFromJson.mockReturnValue("device-runtime");
-
-      const router = createWebhookRouter(gaggimate as any, notion as any);
-      const handler = getNotionWebhookHandler(router);
-
-      const verificationReq = {
-        body: { verification_token: "runtime-verification-token" },
-        headers: {},
-        rawBody: JSON.stringify({ verification_token: "runtime-verification-token" }),
-      };
-      const verificationRes = createResponse();
-      await handler(verificationReq, verificationRes);
-      expect(verificationRes.jsonBody).toEqual({ ok: true, action: "verification_token_received" });
-
-      const eventBody = {
-        type: "page.properties_updated",
-        entity: { type: "page", id: "page-runtime-secret" },
-      };
-      const eventRawBody = JSON.stringify(eventBody);
-      const eventReq = {
-        body: eventBody,
-        headers: {
-          "x-notion-signature": buildNotionWebhookSignature(eventRawBody, "runtime-verification-token"),
-        },
-        rawBody: eventRawBody,
-      };
-      const eventRes = createResponse();
-      await handler(eventReq, eventRes);
-
-      expect(eventRes.statusCode).toBe(200);
-      expect(eventRes.jsonBody).toEqual({ ok: true, action: "accepted" });
-      await vi.waitFor(() => {
-        expect(notion.getProfilePageData).toHaveBeenCalledWith("page-runtime-secret");
-      });
+      const router = createWebhookRouter(createMockGaggimate() as any, createMockNotion() as any);
+      const res = createResponse();
+      await getNotionWebhookHandler(router)({ body: {}, headers: {}, rawBody: "{}" }, res);
+      expect(res.statusCode).toBe(404);
     } finally {
-      (config as any).webhook.secret = originalSecret;
+      (config as any).webhook.secret = prev;
     }
   });
 
